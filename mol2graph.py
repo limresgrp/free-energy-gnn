@@ -1,13 +1,19 @@
 import json
 import numpy as np
-import pickle
 import torch
 
 GLOBAL_NODES_FEATURES = {
     "atoms": ["mass", "radius", "pcharge", "x", "y", "z"],
     "angles": ["mass", "radius", "pcharge"],
-    "dihedrals": ["mass", "radius", "pcharge"]
+    "dihedrals": ["mass", "radius", "pcharge"],
 }
+
+EDGE_FEATURES = [
+    "distance",
+    "bonds",
+    "van_der_waals",
+    "coulomb",
+]
 
 
 def get_richgraph(path: str, bonds=False, rescale=False):
@@ -22,17 +28,13 @@ def get_richgraph(path: str, bonds=False, rescale=False):
 
     # matrix represented as a list of dicts
     edges = []
-    if bonds:
-        _ = [[edges.append({
-            "atoms": [i, j],
-            "value": m["bonds"][i][j]
-        }) for i, row in enumerate(m["bonds"]) if m["bonds"][i][j] > 0] for j, col in enumerate(m["bonds"])]
-    else:
-        _ = [[edges.append({
-            "atoms": [i, j],
-            "van_der_waals": m["van_der_waals"][i][j],
-            "coulomb": m["coulomb"][i][j]
-        }) for i, row in enumerate(m["bonds"]) if m["van_der_waals"][i][j] != 0.0] for j, col in enumerate(m["bonds"])]
+    _ = [[edges.append({
+        "atoms": [i, j],
+        "bonds": m["bonds"][i][j],
+        "van_der_waals": m["van_der_waals"][i][j],
+        "coulomb": m["coulomb"][i][j],
+        "distance": m["distance"][i][j]
+    }) for i, row in enumerate(m["bonds"])] for j, col in enumerate(m["bonds"])]
 
     angles = m["angles"]
     dihedrals = m["dihedrals"]
@@ -54,12 +56,12 @@ def get_nodes_features(atoms: list, node_type: str):
 
 def get_edges_interactions(edges_interactions: list):
     edge_index = np.zeros(shape=(2, len(edges_interactions)))  # In the edge_index format [2, num_edges]
-    matrix = np.zeros(shape=(len(edges_interactions), 2))  # In the edge_attr format [num_edges, num_edge_features]
+    matrix = np.zeros(shape=(len(edges_interactions), len(EDGE_FEATURES)))  # In the edge_attr format [num_edges, num_edge_features]
 
     for i, edge in enumerate(edges_interactions):
         edge_index[:, i] = np.asarray(edge["atoms"])
-        matrix[i, 0] = edge["van_der_waals"]
-        matrix[i, 1] = edge["coulomb"]
+        for j, feature in enumerate(EDGE_FEATURES):
+            matrix[i, j] = edge[feature]
 
     # To be normalized?
 
@@ -85,7 +87,7 @@ def get_angles_graph(atoms, angles):
     return get_graph(angles, atoms, "angles")
 
 
-def get_graph(angles: list, atoms_list: list, angle_type: str):
+def get_graph(angles: list, atoms_list: list, angle_type: str, angles_list=None):
     """
         N.B: The following assumptions has to be made for dihedrals graph too.
 
@@ -147,7 +149,7 @@ def get_graph(angles: list, atoms_list: list, angle_type: str):
     nodes_features = np.zeros(shape=(len(nodes), len(GLOBAL_NODES_FEATURES[angle_type])))
     for i, node in enumerate(nodes):
         nodes_features[i] = [
-            sum_properties(list(node), atoms_list, prop) for prop in GLOBAL_NODES_FEATURES[angle_type]
+           sum_properties(list(node), atoms_list, prop) for prop in GLOBAL_NODES_FEATURES[angle_type]
         ]
 
     return (
@@ -164,9 +166,49 @@ def sum_properties(atoms_indexes, atoms_list: list, prop: str):
     return s
 
 
-def get_dihedrals_graph(atoms, dihedrals):
+def get_dihedrals_graph(atoms, dihedrals, angles_list):
     # First we have to compute different nodes (since in the angles_graph nodes are couple of atoms)
     # TODO: Do they have features? My guess is that angle value between different couple of atoms impacts in a different
     # TODO: way on the target free energy.
 
-    return get_graph(dihedrals, atoms, "dihedrals")
+    return get_graph(dihedrals, atoms, "dihedrals", angles_list)
+
+
+def get_debruijn_graph(atoms, angles, dihedrals):
+    # maps to get directly value from angles and dihedrals
+    atoms_to_dihedral = {
+        tuple(sorted(dihedral["atoms"])): dihedral["value"] for dihedral in dihedrals
+    }
+    atoms_to_angle = {
+        tuple(sorted(angle["atoms"])): angle["value"] for angle in angles
+    }
+
+    # Build an overlap graph
+    overlap_nodes = []
+    for dihedral in dihedrals:
+        overlap_nodes.append(sorted(dihedral["atoms"]))
+
+    edges = []
+    for i, dihedral1 in enumerate(overlap_nodes):
+        for j, dihedral2 in enumerate(overlap_nodes):
+            # If they have 3 atoms in common, then create the edge
+            atoms_in_common = [i for i in dihedral1 if i in dihedral2]
+            if len(atoms_in_common) == 3:
+                edges.append([i, j])
+                # TODO: put a value on the edge here
+                # angle_to_value(tuple(sorted(atoms_in_common)))
+
+    # TODO: (for now there aren't) Remove nodes without an edge
+    # There are helpers for this
+
+    nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
+    for i, node in enumerate(overlap_nodes):
+        # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+        nodes_features[i] = [atoms_to_dihedral[tuple(node)]]
+
+    edge_index = np.asarray(edges).transpose()
+
+    return (
+        torch.from_numpy(nodes_features).float(),
+        torch.from_numpy(edge_index).long(),
+    )

@@ -3,7 +3,7 @@ import torch_geometric
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ELU
-from torch_geometric.nn.conv import NNConv
+from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv
 from torch_geometric.nn.pool import TopKPooling
 
 
@@ -37,9 +37,14 @@ class WeightedGraphNet(nn.Module):
         ).to(device)
         # in_channels is the number of node_features
         # out_channels is the number of OUTPUT node_features
-        self.nnconv_input = NNConv(data_sample.num_node_features, out_channels, self.first_edge_nn, aggr="max").to(device)
+        # NNConv
+        self.nnconv_input = NNConv(data_sample.num_node_features, out_channels, self.first_edge_nn, aggr="add").to(device)
         self.pooling = TopKPooling(out_channels).to(device)
-        self.nnconvs = [NNConv(out_channels, out_channels, self.edge_nn, aggr="max").to(device) for i in range(iterations)]
+        self.nnconvs = [NNConv(out_channels, out_channels, self.edge_nn, aggr="add").to(device) for _ in range(iterations)]
+        # GCNConv
+        # self.nnconv_input = CGConv(data_sample.num_node_features, dim=self.n_edge_features).to(device)
+        # self.pooling = TopKPooling(out_channels).to(device)
+        # self.nnconvs = [CGConv(data_sample.num_node_features, dim=self.n_edge_features).to(device) for _ in range(iterations)]
         self.flatten = Flatten().to(device)
         self.output = Sequential(
             Linear(out_channels * data_sample.x.size()[0], hidden_output_nodes).to(device),
@@ -51,14 +56,14 @@ class WeightedGraphNet(nn.Module):
         # Expand convolution space from input to out_channels
         x, edge_index, edge_attr = sample.x, sample.edge_index, sample.edge_attr
         x = self.nnconv_input(x, edge_index, edge_attr)
-        x = F.relu6(x)
+        x = F.relu(x)
 
         # x = torch.tanh(x)
 
         # Do some convolutions
         for i in range(self.iterations):
             x = self.nnconvs[i](x, edge_index, edge_attr)
-            x = F.relu6(x)
+            x = F.relu(x)
             # x = torch.tanh(x)
 
         # print(x.size()[0])
@@ -68,7 +73,7 @@ class WeightedGraphNet(nn.Module):
         # print(x.size())
         # Return output as a single value
         x = self.output(x)
-        return F.elu(x)
+        return torch.tanh(x)
 
 
 class MultiGraphNet(nn.Module):
@@ -82,7 +87,36 @@ class MultiGraphNet(nn.Module):
     
     def forward(self, samples):
         xs = [self.nets[i](sample) for i, sample in enumerate(samples)]
+        return self.out(torch.cat(xs))
 
-        x = self.out(torch.cat(xs))
-        return F.relu(x)
+
+class UnweightedDebruijnGraphNet(nn.Module):
+    def __init__(self, sample, out_channels=8):
+        super(UnweightedDebruijnGraphNet, self).__init__()
+        self.input = GraphConv(sample.num_node_features, out_channels=out_channels)
+        self.conv1 = GraphConv(out_channels, out_channels)
+        self.conv2 = GraphConv(out_channels, out_channels)
+        self.conv3 = GraphConv(out_channels, out_channels)
+        self.conv4 = GraphConv(out_channels, out_channels)
+        self.output = nn.Sequential(
+            # TODO: replace this Flatten layer to let the network be general
+            Flatten(),
+            nn.Linear(len(sample.x) * out_channels, 1)
+        )
+
+    def forward(self, sample):
+        x = self.input(sample.x, sample.edge_index)
+        x = F.relu(x)
+        x = self.conv1(x, sample.edge_index)
+        x = F.relu(x)
+        x = self.conv2(x, sample.edge_index)
+        x = F.relu(x)
+        x = self.conv3(x, sample.edge_index)
+        x = F.relu(x)
+        # x = self.conv4(x, sample.edge_index)
+        # x = F.relu(x)
+        x = self.output(x)
+        return x
+
+
 

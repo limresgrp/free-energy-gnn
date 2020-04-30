@@ -35,7 +35,7 @@ class StandardScaler():
         return sample * self.scale_ + self.mean_
 
 
-def compute_std_mean(samples):
+def compute_std_mean(samples, edges=True):
     def std_mean(index):
         population = torch.zeros(size=(len(samples[0][index]) * len(samples), len(samples[0][index][0])))
         for i, sample in enumerate(samples):
@@ -44,20 +44,31 @@ def compute_std_mean(samples):
         return torch.mean(population, dim=0), torch.std(population, dim=0)
 
     mean_nodes, std_nodes = std_mean(index=0)
-    mean_edges, std_edges = std_mean(index=2)
+    if edges:
+        mean_edges, std_edges = std_mean(index=2)
+        return mean_nodes, std_nodes, mean_edges, std_edges
+    else:
+        return mean_nodes, std_nodes
 
-    return mean_nodes, std_nodes, mean_edges, std_edges
 
-
-def normalize(samples):
+def normalize(samples, train_ind, edges=True):
     # Normalize mean = 0 and variance = 1
-    mean_nodes, std_nodes, mean_edges, std_edges = compute_std_mean(samples)
+    training_samples = [samples[i] for i in train_ind]
+    if edges:
+        mean_nodes, std_nodes, mean_edges, std_edges = compute_std_mean(training_samples)
 
-    return [
-        (
-            (sample[0] - mean_nodes) / std_nodes,
-            sample[1],
-            (sample[2] - mean_edges) / std_edges
-        )
-        for i, sample in enumerate(samples)
-    ]
+        return [
+            (
+                (sample[0] - mean_nodes) / std_nodes,
+                sample[1],
+                (sample[2] - mean_edges) / std_edges
+            ) for i, sample in enumerate(samples)
+        ]
+    else:
+        mean_nodes, std_nodes = compute_std_mean(training_samples, edges=False)
+        return [
+            (
+                (sample[0] - mean_nodes) / std_nodes,
+                sample[1]
+            ) for i, sample in enumerate(samples)
+        ]
