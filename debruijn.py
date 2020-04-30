@@ -24,7 +24,8 @@ if device == "cpu":
     warn("You are using CPU instead of CUDA. The computation will be longer...")
 
 
-seed = 76583
+# seed = 7653
+seed = 76583  # with this it seems magic... maybe I should investigate more...
 random.seed(seed)
 torch.manual_seed(seed)
 
@@ -32,13 +33,14 @@ torch.manual_seed(seed)
 DATASET_TYPE = "medium"
 DATA_DIR = f"ala_dipep_{DATASET_TYPE}"
 TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
-N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000
+N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if "old" else 64074
 NORMALIZE_DATA = True
 OVERWRITE_PICKLES = True
 
 if not OVERWRITE_PICKLES:
     warn("You are using existing pickles, change this setting if you add features to nodes/edges ")
 
+# Le convoluzioni servono perchè con 0 impara gran poco (arriva a 12)
 # Parameters
 run_parameters = {
     "graph_type": "De Bruijn",
@@ -46,9 +48,9 @@ run_parameters = {
     "convolution": "GraphConv",
     "convolutions": 3,
     "learning_rate": 0.001,
+    "epochs": 20,
 }
 
-epochs = 30
 criterion = L1Loss()
 # criterion = MSELoss()
 
@@ -78,8 +80,9 @@ for i in range(0, len(graph_samples), 10):
     if i+10 > len(graph_samples):
         train_ind = train_ind + list(range(i, len(graph_samples)))
     else:
-        train_ind = train_ind + list(range(i, i+8))
-        validation_ind.append(i+8)
+        train_ind = train_ind + list(range(i, i+7))
+        validation_ind.append(i+7)
+        test_ind.append(i+8)
         test_ind.append(i+9)
 
 with open(TARGET_FILE, "r") as t:
@@ -109,7 +112,7 @@ print("Dataset loaded")
 model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"])
-# optimizer = torch.optim.Adam(model.parameters(), lr=0.00001)
+# optimizer = torch.optim.Adam(model.parameters(), lr=run_parameters["learning_rate"])
 # TODO: scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
 #                                                        factor=0.7, patience=5,
 #                                                        min_lr=0.00001)
@@ -117,7 +120,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate
 print(model)
 model.train()
 
-for i in range(epochs):
+for i in range(run_parameters["epochs"]):
     random.shuffle(train_ind)
     for number, j in enumerate(train_ind):
         # Forward pass: Compute predicted y by passing x to the model
@@ -136,16 +139,16 @@ for i in range(epochs):
 
     # Compute validation loss
     model.eval()
-    losses = []
+    val_losses = []
     for j in validation_ind:
         y_pred = model(dataset[j].to(device))
-        loss = criterion(y_pred, dataset[j].y)
-        losses.append(loss.item())
+        val_loss = criterion(y_pred, dataset[j].y)
+        val_losses.append(val_loss.item())
 
-    loss = torch.mean(torch.as_tensor(losses)).item()
+    val_loss = torch.mean(torch.as_tensor(val_losses)).item()
     if NORMALIZE_DATA:
-        loss = loss*target_std
-    print("Epoch {} - Validation loss: {:.2f}".format(i+1, loss))
+        val_loss = val_loss*target_std
+    print("Epoch {} - Validation MAE: {:.2f}".format(i+1, val_loss))
 
 
 predictions = []
