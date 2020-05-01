@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 import os
 from pprint import pprint
+import tqdm
 
 # pytorch imports
 import torch
@@ -132,7 +133,7 @@ model.train()
 
 for i in range(run_parameters["epochs"]):
     random.shuffle(train_ind)
-    for number, j in enumerate(train_ind):
+    for number, j in enumerate(tqdm.tqdm(train_ind)):
         # Forward pass: Compute predicted y by passing x to the model
         y_pred = model(dataset[j].to(device))
 
@@ -143,9 +144,6 @@ for i in range(run_parameters["epochs"]):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        if number % 500 == 0 and number > 0:
-            print("{} samples out of {}".format(number, len(train_ind)))
 
     # Compute validation loss
     model.eval()
