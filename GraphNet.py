@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ELU
 from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv
 from torch_geometric.nn.pool import TopKPooling
+from torch_geometric.nn import global_sort_pool
 
 
 class Flatten(nn.Module):
@@ -93,15 +94,17 @@ class MultiGraphNet(nn.Module):
 class UnweightedDebruijnGraphNet(nn.Module):
     def __init__(self, sample, out_channels=8):
         super(UnweightedDebruijnGraphNet, self).__init__()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.input = GraphConv(sample.num_node_features, out_channels=out_channels)
-        self.conv1 = GraphConv(out_channels, out_channels)
-        self.conv2 = GraphConv(out_channels, out_channels)
-        self.conv3 = GraphConv(out_channels, out_channels)
-        self.conv4 = GraphConv(out_channels, out_channels)
+        self.conv1 = GraphConv(out_channels, 2*out_channels)
+        self.conv2 = GraphConv(2*out_channels, 4*out_channels)
+        self.conv3 = GraphConv(4*out_channels, 8*out_channels)
+        # self.conv4 = GraphConv(out_channels, out_channels)
         self.output = nn.Sequential(
             # TODO: replace this Flatten layer to let the network be general
+            # global_sort_pool
             Flatten(),
-            nn.Linear(len(sample.x) * out_channels, 1)
+            nn.Linear(len(sample.x) * 8 * out_channels, 1)
         )
 
     def forward(self, sample):
@@ -115,8 +118,8 @@ class UnweightedDebruijnGraphNet(nn.Module):
         x = F.relu(x)
         # x = self.conv4(x, sample.edge_index)
         # x = F.relu(x)
-        x = self.output(x)
-        return x
+        # TODO: x = global_sort_pool(x, batch=torch.zeros(sample.x).long().to(self.device), k=self.out_channels*8*10)
+        return self.output(x)
 
 
 

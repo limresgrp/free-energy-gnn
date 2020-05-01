@@ -13,7 +13,7 @@ import tqdm
 # pytorch imports
 import torch
 from torch.nn import L1Loss, MSELoss
-from torch_geometric.data import Data
+from torch_geometric.data import Data, DataLoader
 
 # Custom imports
 import mol2graph
