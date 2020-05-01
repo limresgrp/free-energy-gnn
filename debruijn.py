@@ -7,6 +7,7 @@ import random
 import json
 from datetime import datetime
 import os
+from pprint import pprint
 
 # pytorch imports
 import torch
@@ -51,6 +52,9 @@ run_parameters = {
     "epochs": 200,
     "normalize_target": NORMALIZE_TARGET,
 }
+
+# To check config at the beginning
+pprint(run_parameters)
 
 criterion = L1Loss()
 # criterion = MSELoss()
