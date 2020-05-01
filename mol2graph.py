@@ -9,7 +9,7 @@ GLOBAL_NODES_FEATURES = {
 }
 
 EDGE_FEATURES = [
-    "distance",
+    # "distance",
     "bonds",
     "van_der_waals",
     "coulomb",
@@ -33,7 +33,7 @@ def get_richgraph(path: str, bonds=False, rescale=False):
         "bonds": m["bonds"][i][j],
         "van_der_waals": m["van_der_waals"][i][j],
         "coulomb": m["coulomb"][i][j],
-        "distance": m["distance"][i][j]
+        # "distance": m["distance"][i][j]
     }) for i, row in enumerate(m["bonds"])] for j, col in enumerate(m["bonds"])]
 
     angles = m["angles"]

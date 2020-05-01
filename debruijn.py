@@ -30,25 +30,26 @@ random.seed(seed)
 torch.manual_seed(seed)
 
 # Data parameters
-DATASET_TYPE = "medium"
+DATASET_TYPE = "big"
 DATA_DIR = f"ala_dipep_{DATASET_TYPE}"
 TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
-N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if "old" else 64074
+N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
-OVERWRITE_PICKLES = True
+NORMALIZE_TARGET = True
+OVERWRITE_PICKLES = False
 
 if not OVERWRITE_PICKLES:
     warn("You are using existing pickles, change this setting if you add features to nodes/edges ")
 
-# Le convoluzioni servono perchè con 0 impara gran poco (arriva a 12)
 # Parameters
 run_parameters = {
     "graph_type": "De Bruijn",
     "out_channels": 4,
     "convolution": "GraphConv",
     "convolutions": 3,
-    "learning_rate": 0.001,
-    "epochs": 20,
+    "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
+    "epochs": 200,
+    "normalize_target": NORMALIZE_TARGET,
 }
 
 criterion = L1Loss()
@@ -80,22 +81,27 @@ for i in range(0, len(graph_samples), 10):
     if i+10 > len(graph_samples):
         train_ind = train_ind + list(range(i, len(graph_samples)))
     else:
-        train_ind = train_ind + list(range(i, i+7))
-        validation_ind.append(i+7)
-        test_ind.append(i+8)
+        train_ind = train_ind + list(range(i, i+3))
+        test_ind.append(i+3)
+        train_ind = train_ind + list(range(i+4, i+6))
+        validation_ind.append(i+6)
+        train_ind = train_ind + list(range(i+7, i+9))
         test_ind.append(i+9)
 
 with open(TARGET_FILE, "r") as t:
     target = torch.as_tensor([torch.tensor([float(v)]) for v in t.readlines()][:N_SAMPLES])
+    if not NORMALIZE_TARGET:
+        target = target.reshape(shape=(len(target), 1))
 
 # Compute STD and MEAN only on training data
 target_mean, target_std = 0, 1
-if NORMALIZE_DATA:
-    training_target = torch.tensor([target[i] for i in train_ind])
-    target_std = torch.std(training_target, dim=0)
-    target_mean = torch.mean(training_target, dim=0)
+if NORMALIZE_TARGET:
+    # training_target = torch.tensor([target[i] for i in train_ind])
+    target_std = torch.std(target, dim=0)
+    target_mean = torch.mean(target, dim=0)
     target = ((target - target_mean) / target_std).reshape(shape=(len(target), 1))
 
+if NORMALIZE_DATA:
     # Single graph normalization
     samples = normalize(graph_samples, train_ind, False)
 else:
@@ -140,15 +146,17 @@ for i in range(run_parameters["epochs"]):
     # Compute validation loss
     model.eval()
     val_losses = []
-    for j in validation_ind:
-        y_pred = model(dataset[j].to(device))
-        val_loss = criterion(y_pred, dataset[j].y)
-        val_losses.append(val_loss.item())
+    # save some memory
+    with torch.no_grad():
+        for j in validation_ind:
+            y_pred = model(dataset[j].to(device))
+            val_loss = criterion(y_pred, dataset[j].y)
+            val_losses.append(val_loss.item())
 
-    val_loss = torch.mean(torch.as_tensor(val_losses)).item()
-    if NORMALIZE_DATA:
-        val_loss = val_loss*target_std
-    print("Epoch {} - Validation MAE: {:.2f}".format(i+1, val_loss))
+        val_loss = torch.mean(torch.as_tensor(val_losses)).item()
+        if NORMALIZE_TARGET:
+            val_loss = val_loss*target_std
+        print("Epoch {} - Validation MAE: {:.2f}".format(i+1, val_loss))
 
 
 predictions = []
@@ -163,7 +171,7 @@ for j in test_ind:
 
 # Compute MAE
 mae = np.absolute(np.asarray(errors)).mean()
-if NORMALIZE_DATA:
+if NORMALIZE_TARGET:
     mae *= target_std
 print("Mean Absolute Error: {:.2f}".format(mae))
 
@@ -186,11 +194,11 @@ torch.save({
 
 
 # !!!!. Visualize weights and outputs from layers to see how the NN performs
-# !!!!. Visualize FES output of the NN (I have something very close to it)
-# !!!!. Change representation of the error (consider diagonal instead of horizontal)
+# !!!!. Visualize FES output of the NN (I have something very close to it) draw a point or histogram2d for each test
+
 # !. Read paper on NNConv after having read slides from geometric deep learning
 # !. Understand what is graph attention and try pooling methods (top-k?)
-# GOOD: (invert the graph) good information in edges: find a way to prioritize them
+# Try to use batch to avoid loss oscillation
 # (....) Try HypergraphConv layer
 
 # ? (To investigate) use dataset batching https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
