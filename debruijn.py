@@ -50,8 +50,9 @@ run_parameters = {
     "convolution": "GraphConv",
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
-    "epochs": 200,
+    "epochs": 1500,
     "normalize_target": NORMALIZE_TARGET,
+    "sort_pool": False,
 }
 
 # To check config at the beginning
@@ -196,17 +197,14 @@ torch.save({
 
 
 # !!!!. Visualize weights and outputs from layers to see how the NN performs
-# !!!!. Visualize FES output of the NN (I have something very close to it) draw a point or histogram2d for each test
 
 # !. Read paper on NNConv after having read slides from geometric deep learning
-# !. Understand what is graph attention and try pooling methods (top-k?)
-# Try to use batch to avoid loss oscillation
+# !. Understand what is graph attention and try pooling methods (adaptive pooling from pytorch seems to work)
+# Try to use batch to avoid loss oscillation (makes sense?)
 # (....) Try HypergraphConv layer
 
 # ? (To investigate) use dataset batching https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
-# ?. Use validation set
 # ?. Add dropout layer if needed
 # ?. check if should use edge_weight or edge_attributes
 
 # Plus: Understand what pos= on Data means (should not change since I don't use it in the FirstGraphNet)
-

@@ -1,11 +1,16 @@
 import torch
-import torch_geometric
+# import torch_geometric
 import torch.nn as nn
+from torch.nn import AdaptiveAvgPool1d
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ELU
+from torch.nn import Sequential, Linear, ELU, AdaptiveMaxPool1d
 from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv
 from torch_geometric.nn.pool import TopKPooling
-from torch_geometric.nn import global_sort_pool
+# from torch_geometric.nn import global_sort_pool, global_add_pool
+# from torch_geometric.data import Data
+# from torch_geometric.utils import to_networkx
+# from dgl import DGLGraph
+# from dgl.nn.pytorch.glob import SortPooling
 
 
 class Flatten(nn.Module):
@@ -17,10 +22,6 @@ class Flatten(nn.Module):
         return x.view(-1)
 
 
-"""
-To be used with normal weighted graphs.
-TODO: To be tweaked
-"""
 class WeightedGraphNet(nn.Module):
     def __init__(self, data_sample, out_channels=24, iterations=4, hidden_output_nodes=16, output_nodes=1):
         super(WeightedGraphNet, self).__init__()
@@ -99,27 +100,37 @@ class UnweightedDebruijnGraphNet(nn.Module):
         self.conv1 = GraphConv(out_channels, 2*out_channels)
         self.conv2 = GraphConv(2*out_channels, 4*out_channels)
         self.conv3 = GraphConv(4*out_channels, 8*out_channels)
-        # self.conv4 = GraphConv(out_channels, out_channels)
+        # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
+        self.final_nodes = 60
+        # self.pool = SortPooling(self.final_nodes)
         self.output = nn.Sequential(
-            # TODO: replace this Flatten layer to let the network be general
-            # global_sort_pool
+            AdaptiveAvgPool1d(self.final_nodes),
             Flatten(),
-            nn.Linear(len(sample.x) * 8 * out_channels, 1)
+            Flatten(),
+            nn.Linear(self.final_nodes * out_channels * 8, 1)
+            # nn.Linear(self.final_nodes*8*out_channels, 1)
         )
 
     def forward(self, sample):
         x = self.input(sample.x, sample.edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.conv1(x, sample.edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.conv2(x, sample.edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         x = self.conv3(x, sample.edge_index)
-        x = F.relu(x)
+        x = F.gelu(x)
         # x = self.conv4(x, sample.edge_index)
         # x = F.relu(x)
-        # TODO: x = global_sort_pool(x, batch=torch.zeros(sample.x).long().to(self.device), k=self.out_channels*8*10)
-        return self.output(x)
+        # # Put the graph into a DGL layer
+        # new_sample = Data(x=x, edge_index=sample.edge_index).to(self.device)
+        # nx_graph = to_networkx(new_sample, to_undirected=True)
+        # dgl_graph = DGLGraph()
+        # dgl_graph.from_networkx(nx_graph)
+        # x = self.pool(dgl_graph, x)
+        # x = global_add_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device)).reshape(64)
+        # x = global_sort_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device), k=self.final_nodes)
+        return self.output(x.reshape(x.size()[1], x.size()[0]).unsqueeze(dim=1))
 
 
 
