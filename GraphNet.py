@@ -11,6 +11,7 @@ from torch_geometric.nn.pool import TopKPooling
 # from torch_geometric.utils import to_networkx
 # from dgl import DGLGraph
 # from dgl.nn.pytorch.glob import SortPooling
+from drawing import save_graph
 
 
 class Flatten(nn.Module):
@@ -101,7 +102,7 @@ class UnweightedDebruijnGraphNet(nn.Module):
         self.conv2 = GraphConv(2*out_channels, 4*out_channels)
         self.conv3 = GraphConv(4*out_channels, 8*out_channels)
         # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
-        self.final_nodes = 60
+        self.final_nodes = 41
         # self.pool = SortPooling(self.final_nodes)
         self.output = nn.Sequential(
             AdaptiveAvgPool1d(self.final_nodes),
@@ -112,14 +113,19 @@ class UnweightedDebruijnGraphNet(nn.Module):
         )
 
     def forward(self, sample):
+        # save_graph(sample.x, sample.edge_index, "starting_point.gv")
         x = self.input(sample.x, sample.edge_index)
         x = F.gelu(x)
+        # save_graph(x, sample.edge_index, "after_one.gv")
         x = self.conv1(x, sample.edge_index)
         x = F.gelu(x)
+        # save_graph(x, sample.edge_index, "after_two.gv")
         x = self.conv2(x, sample.edge_index)
         x = F.gelu(x)
+        # save_graph(x, sample.edge_index, "after_three.gv")
         x = self.conv3(x, sample.edge_index)
         x = F.gelu(x)
+        # save_graph(x, sample.edge_index, "after_four.gv")
         # x = self.conv4(x, sample.edge_index)
         # x = F.relu(x)
         # # Put the graph into a DGL layer

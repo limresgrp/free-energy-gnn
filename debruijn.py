@@ -1,4 +1,3 @@
-# TODO: Put the relevant information in nodes
 # system imports
 import pickle
 import numpy as np
@@ -6,19 +5,21 @@ from warnings import warn
 import random
 import json
 from datetime import datetime
+import time
 import os
 from pprint import pprint
 import tqdm
 
 # pytorch imports
 import torch
-from torch.nn import L1Loss, MSELoss
-from torch_geometric.data import Data, DataLoader
+from torch.nn import L1Loss
+from torch_geometric.data import Data
 
 # Custom imports
-import mol2graph
-from scale import normalize
-from GraphNet import WeightedGraphNet, MultiGraphNet, UnweightedDebruijnGraphNet
+from helpers import mol2graph
+from helpers.EarlyStopping import EarlyStopping
+from helpers.scale import normalize
+from GraphNet import UnweightedDebruijnGraphNet
 
 assert torch.__version__ == "1.5.0"  # Needed for pytorch-geometric
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -26,13 +27,13 @@ if device == "cpu":
     warn("You are using CPU instead of CUDA. The computation will be longer...")
 
 
-# seed = 7653
-seed = 76583  # with this it seems magic... maybe I should investigate more...
+seed = 7123
+# seed = 76583
 random.seed(seed)
 torch.manual_seed(seed)
 
 # Data parameters
-DATASET_TYPE = "big"
+DATASET_TYPE = "old"
 DATA_DIR = f"ala_dipep_{DATASET_TYPE}"
 TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
@@ -50,9 +51,12 @@ run_parameters = {
     "convolution": "GraphConv",
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
-    "epochs": 1500,
+    "epochs": 2000,
+    "patience": 100,
     "normalize_target": NORMALIZE_TARGET,
     "sort_pool": False,
+    "train_split": 0.7,
+    "validation_split": 0.1,
 }
 
 # To check config at the beginning
@@ -80,19 +84,26 @@ for i in range(N_SAMPLES):
 
     graph_samples.append(debruijn)
 
-train_ind, validation_ind, test_ind = [], [], []
+# Shuffle indexes
+indexes = [i for i in range(len(graph_samples))]
+random.shuffle(indexes)
+split = np.int(run_parameters["train_split"]*len(graph_samples))
+train_ind = indexes[:split]
+split_2 = split + np.int(run_parameters["validation_split"]*len(graph_samples))
+validation_ind = indexes[split:split_2]
+test_ind = indexes[split_2:]
 
-for i in range(0, len(graph_samples), 10):
-    # if we are exceeding indexes, put these samples to training
-    if i+10 > len(graph_samples):
-        train_ind = train_ind + list(range(i, len(graph_samples)))
-    else:
-        train_ind = train_ind + list(range(i, i+3))
-        test_ind.append(i+3)
-        train_ind = train_ind + list(range(i+4, i+6))
-        validation_ind.append(i+6)
-        train_ind = train_ind + list(range(i+7, i+9))
-        test_ind.append(i+9)
+# for i in range(0, len(graph_samples), 10):
+#     # if we are exceeding indexes, put these samples to training
+#     if i+10 > len(graph_samples):
+#         train_ind = train_ind + list(range(i, len(graph_samples)))
+#     else:
+#         train_ind = train_ind + list(range(i, i+3))
+#         test_ind.append(i+3)
+#         train_ind = train_ind + list(range(i+4, i+6))
+#         validation_ind.append(i+6)
+#         train_ind = train_ind + list(range(i+7, i+9))
+#         test_ind.append(i+9)
 
 with open(TARGET_FILE, "r") as t:
     target = torch.as_tensor([torch.tensor([float(v)]) for v in t.readlines()][:N_SAMPLES])
@@ -120,9 +131,12 @@ for i, sample in enumerate(samples):
     )
 print("Dataset loaded")
 
+# training = [dataset[i] for i in train_ind]
+# data_loader = DataLoader(training, batch_size=32, shuffle=True)
 
 model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 
+stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"])
 # optimizer = torch.optim.Adam(model.parameters(), lr=run_parameters["learning_rate"])
 # TODO: scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
@@ -130,8 +144,8 @@ optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate
 #                                                        min_lr=0.00001)
 # TODO: print a good summary of the model https://github.com/szagoruyko/pytorchviz
 print(model)
+start = time.time()
 model.train()
-
 for i in range(run_parameters["epochs"]):
     random.shuffle(train_ind)
     for number, j in enumerate(tqdm.tqdm(train_ind)):
@@ -161,6 +175,15 @@ for i in range(run_parameters["epochs"]):
             val_loss = val_loss*target_std
         print("Epoch {} - Validation MAE: {:.2f}".format(i+1, val_loss))
 
+        # Check Early Stopping
+        if stopping.check(val_loss):
+            run_parameters["epochs"] = i+1
+            print(f"Training finished because of early stopping. Best loss on validation: {stopping.best_score}")
+            break
+
+duration = (time.time() - start) / 60.0  # Minutes
+hours = np.int(np.floor(duration / 60.0))
+minutes = np.int(np.floor(duration - hours*60))
 
 predictions = []
 errors = []
@@ -184,6 +207,7 @@ os.makedirs(directory)
 with open(f"{directory}/result.json", "w") as f:
     json.dump({
         "run_parameters": run_parameters,
+        "duration": f"{hours}h{minutes}m",
         "predicted": predictions,
         "target": [float(target[i].item()) for i in test_ind],
         "target_std": float(target_std),

@@ -9,12 +9,12 @@ import os
 
 # pytorch imports
 import torch
-from torch.nn import L1Loss, MSELoss
+from torch.nn import L1Loss
 from torch_geometric.data import Data
 
 # Custom imports
-import mol2graph
-from scale import normalize
+from helpers import mol2graph
+from helpers.scale import normalize
 from GraphNet import WeightedGraphNet, MultiGraphNet
 
 assert torch.__version__ == "1.5.0"  # Needed for pytorch-geometric
