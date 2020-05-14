@@ -202,6 +202,7 @@ with open(f"{directory}/result.json", "w") as f:
         "target_std": float(target_std),
         "target_mean": float(target_mean),
         "test_frames": test_ind,
+        "train_frames": train_ind,
     }, f)
 
 torch.save({
