@@ -39,7 +39,7 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = False
+OVERWRITE_PICKLES = True
 
 if not OVERWRITE_PICKLES:
     warn("You are using existing pickles, change this setting if you add features to nodes/edges ")
@@ -52,9 +52,10 @@ run_parameters = {
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
     "epochs": 2000,
-    "patience": 100,
+    "patience": 10,
     "normalize_target": NORMALIZE_TARGET,
-    "sort_pool": False,
+    "dataset_perc": 0.5,
+    "shuffle": False,
     "train_split": 0.7,
     "validation_split": 0.1,
 }
@@ -64,6 +65,16 @@ pprint(run_parameters)
 
 criterion = L1Loss()
 # criterion = MSELoss()
+
+# Shuffle indexes
+indexes = [i for i in range(N_SAMPLES)]
+random.shuffle(indexes)
+indexes = indexes[:np.int(run_parameters["dataset_perc"]*N_SAMPLES)]
+split = np.int(run_parameters["train_split"]*len(indexes))
+train_ind = indexes[:split]
+split_2 = split + np.int(run_parameters["validation_split"]*len(indexes))
+validation_ind = indexes[split:split_2]
+test_ind = indexes[split_2:]
 
 graph_samples = []
 for i in range(N_SAMPLES):
@@ -77,33 +88,12 @@ for i in range(N_SAMPLES):
     except FileNotFoundError:
         atoms, edges, angles, dihedrals = mol2graph.get_richgraph("{}/{}.json".format(DATA_DIR, i))
 
-        debruijn = mol2graph.get_debruijn_graph(atoms, angles, dihedrals)
+        debruijn = mol2graph.get_debruijn_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"])
 
         with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
             pickle.dump(debruijn, p)
 
     graph_samples.append(debruijn)
-
-# Shuffle indexes
-indexes = [i for i in range(len(graph_samples))]
-random.shuffle(indexes)
-split = np.int(run_parameters["train_split"]*len(graph_samples))
-train_ind = indexes[:split]
-split_2 = split + np.int(run_parameters["validation_split"]*len(graph_samples))
-validation_ind = indexes[split:split_2]
-test_ind = indexes[split_2:]
-
-# for i in range(0, len(graph_samples), 10):
-#     # if we are exceeding indexes, put these samples to training
-#     if i+10 > len(graph_samples):
-#         train_ind = train_ind + list(range(i, len(graph_samples)))
-#     else:
-#         train_ind = train_ind + list(range(i, i+3))
-#         test_ind.append(i+3)
-#         train_ind = train_ind + list(range(i+4, i+6))
-#         validation_ind.append(i+6)
-#         train_ind = train_ind + list(range(i+7, i+9))
-#         test_ind.append(i+9)
 
 with open(TARGET_FILE, "r") as t:
     target = torch.as_tensor([torch.tensor([float(v)]) for v in t.readlines()][:N_SAMPLES])
@@ -131,8 +121,7 @@ for i, sample in enumerate(samples):
     )
 print("Dataset loaded")
 
-# training = [dataset[i] for i in train_ind]
-# data_loader = DataLoader(training, batch_size=32, shuffle=True)
+# TODO: batches
 
 model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 

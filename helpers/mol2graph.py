@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import torch
+import random
 
 GLOBAL_NODES_FEATURES = {
     "atoms": ["mass", "radius", "pcharge", "x", "y", "z"],
@@ -174,8 +175,10 @@ def get_dihedrals_graph(atoms, dihedrals, angles_list):
     return get_graph(dihedrals, atoms, "dihedrals", angles_list)
 
 
-def get_debruijn_graph(atoms, angles, dihedrals):
+def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
     # maps to get directly value from angles and dihedrals
+    if shuffle:
+        random.shuffle(dihedrals)
     atoms_to_dihedral = {
         tuple(sorted(dihedral["atoms"])): dihedral["value"] for dihedral in dihedrals
     }
