@@ -39,7 +39,8 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = True
+OVERWRITE_PICKLES = False
+UNSEEN_REGION = "right"  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
     warn("You are using existing pickles, change this setting if you add features to nodes/edges ")
@@ -52,29 +53,55 @@ run_parameters = {
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
     "epochs": 2000,
-    "patience": 10,
+    "patience": 100,
     "normalize_target": NORMALIZE_TARGET,
-    "dataset_perc": 0.5,
+    "dataset_perc": 1,
     "shuffle": False,
     "train_split": 0.7,
     "validation_split": 0.1,
+    "unseen_region": UNSEEN_REGION
 }
 
 # To check config at the beginning
 pprint(run_parameters)
 
+if run_parameters["dataset_perc"] < 1:
+    warn("You are not using the full dataset. Be aware of this")
+
 criterion = L1Loss()
 # criterion = MSELoss()
 
-# Shuffle indexes
-indexes = [i for i in range(N_SAMPLES)]
-random.shuffle(indexes)
-indexes = indexes[:np.int(run_parameters["dataset_perc"]*N_SAMPLES)]
-split = np.int(run_parameters["train_split"]*len(indexes))
-train_ind = indexes[:split]
-split_2 = split + np.int(run_parameters["validation_split"]*len(indexes))
-validation_ind = indexes[split:split_2]
-test_ind = indexes[split_2:]
+if UNSEEN_REGION is not None:
+    seen_region = 'right' if UNSEEN_REGION == 'left' else 'left'
+    warn(f"Training on {seen_region} minima only. Testing on {UNSEEN_REGION} minima.")
+
+    with open(f"{DATA_DIR}/left.json", "r") as l:
+        left = json.load(l)
+
+    with open(f"{DATA_DIR}/right.json", "r") as r:
+        right = json.load(r)
+
+    # Training on everything else
+    if UNSEEN_REGION == "left":
+        indexes = left
+    else:
+        indexes = right
+
+    train_ind = [i for i in range(N_SAMPLES) if i not in indexes]
+    # half to validation, half to test
+    random.shuffle(indexes)
+    split = np.int(0.5 * len(indexes))
+    validation_ind = indexes[:split]
+    test_ind = indexes[split:]
+else:
+    indexes = [i for i in range(N_SAMPLES)]
+    random.shuffle(indexes)
+    indexes = indexes[:np.int(run_parameters["dataset_perc"]*N_SAMPLES)]
+    split = np.int(run_parameters["train_split"]*len(indexes))
+    train_ind = indexes[:split]
+    split_2 = split + np.int(run_parameters["validation_split"]*len(indexes))
+    validation_ind = indexes[split:split_2]
+    test_ind = indexes[split_2:]
 
 graph_samples = []
 for i in range(N_SAMPLES):
@@ -90,8 +117,9 @@ for i in range(N_SAMPLES):
 
         debruijn = mol2graph.get_debruijn_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"])
 
-        with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
-            pickle.dump(debruijn, p)
+        if OVERWRITE_PICKLES:
+            with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
+                pickle.dump(debruijn, p)
 
     graph_samples.append(debruijn)
 
@@ -134,8 +162,8 @@ optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate
 # TODO: print a good summary of the model https://github.com/szagoruyko/pytorchviz
 print(model)
 start = time.time()
-model.train()
 for i in range(run_parameters["epochs"]):
+    model.train()
     random.shuffle(train_ind)
     for number, j in enumerate(tqdm.tqdm(train_ind)):
         # Forward pass: Compute predicted y by passing x to the model

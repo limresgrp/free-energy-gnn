@@ -12,6 +12,7 @@ from torch_geometric.nn.pool import TopKPooling
 # from dgl import DGLGraph
 # from dgl.nn.pytorch.glob import SortPooling
 from drawing import save_graph
+import random
 
 
 class Flatten(nn.Module):
@@ -94,10 +95,10 @@ class MultiGraphNet(nn.Module):
 
 
 class UnweightedDebruijnGraphNet(nn.Module):
-    def __init__(self, sample, out_channels=8):
+    def __init__(self, sample=None, out_channels=4):
         super(UnweightedDebruijnGraphNet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.input = GraphConv(sample.num_node_features, out_channels=out_channels)
+        self.input = GraphConv(1, out_channels=out_channels)
         self.conv1 = GraphConv(out_channels, 2*out_channels)
         self.conv2 = GraphConv(2*out_channels, 4*out_channels)
         self.conv3 = GraphConv(4*out_channels, 8*out_channels)
@@ -113,6 +114,8 @@ class UnweightedDebruijnGraphNet(nn.Module):
         )
 
     def forward(self, sample):
+        # Dropout layer
+        # x = self.dropout(sample.x, dropout=0.3)
         # save_graph(sample.x, sample.edge_index, "starting_point.gv")
         x = self.input(sample.x, sample.edge_index)
         x = F.gelu(x)
@@ -137,6 +140,16 @@ class UnweightedDebruijnGraphNet(nn.Module):
         # x = global_add_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device)).reshape(64)
         # x = global_sort_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device), k=self.final_nodes)
         return self.output(x.reshape(x.size()[1], x.size()[0]).unsqueeze(dim=1))
+
+    def dropout(self, nodes, dropout):
+        if not self.training:
+            return nodes
+
+        for node in nodes:
+            to_drop = random.random()
+            if to_drop < dropout:
+                node[:] = 0
+        return nodes
 
 
 
