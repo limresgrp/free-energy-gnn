@@ -40,7 +40,7 @@ N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "mediu
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
 OVERWRITE_PICKLES = False
-UNSEEN_REGION = "right"  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
+UNSEEN_REGION = None  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
     warn("You are using existing pickles, change this setting if you add features to nodes/edges ")
@@ -136,6 +136,9 @@ if NORMALIZE_TARGET:
     target_mean = torch.mean(target, dim=0)
     target = ((target - target_mean) / target_std).reshape(shape=(len(target), 1))
 
+# with open(f"{DATA_DIR}/dihedrals.json", "w") as j:
+#     json.dump([sample[2] for sample in graph_samples], j)
+
 if NORMALIZE_DATA:
     # Single graph normalization
     samples = normalize(graph_samples, train_ind, False)
@@ -147,14 +150,14 @@ for i, sample in enumerate(samples):
     dataset.append(
         Data(x=sample[0], edge_index=sample[1], y=target[i]).to(device)
     )
+
 print("Dataset loaded")
 
 # TODO: batches
-
 model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
-optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"])
+optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)
 # optimizer = torch.optim.Adam(model.parameters(), lr=run_parameters["learning_rate"])
 # TODO: scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
 #                                                        factor=0.7, patience=5,

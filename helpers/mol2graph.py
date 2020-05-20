@@ -180,16 +180,16 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
     if shuffle:
         random.shuffle(dihedrals)
     atoms_to_dihedral = {
-        tuple(sorted(dihedral["atoms"])): dihedral["value"] for dihedral in dihedrals
+        tuple(dihedral["atoms"]): dihedral["value"] for dihedral in dihedrals
     }
     atoms_to_angle = {
-        tuple(sorted(angle["atoms"])): angle["value"] for angle in angles
+        tuple(angle["atoms"]): angle["value"] for angle in angles
     }
 
     # Build an overlap graph
     overlap_nodes = []
     for dihedral in dihedrals:
-        overlap_nodes.append(sorted(dihedral["atoms"]))
+        overlap_nodes.append(dihedral["atoms"])
 
     edges = []
     for i, dihedral1 in enumerate(overlap_nodes):
@@ -214,4 +214,5 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
     return (
         torch.from_numpy(nodes_features).float(),
         torch.from_numpy(edge_index).long(),
+        overlap_nodes
     )
