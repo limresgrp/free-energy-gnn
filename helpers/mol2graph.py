@@ -216,3 +216,40 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
         torch.from_numpy(edge_index).long(),
         overlap_nodes
     )
+
+
+def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False):
+    if shuffle:
+        random.shuffle(dihedrals)
+
+    # Using sorted to avoid (1,2) (2,1) duplicates
+    atoms_to_dihedral = {
+        tuple(sorted(dihedral["atoms"][1:3])): dihedral["value"] for dihedral in dihedrals
+    }
+
+    # Build an overlap graph
+    overlap_nodes = set()
+    for dihedral in dihedrals:
+        overlap_nodes.add(tuple(sorted(dihedral["atoms"][1:3])))
+
+    # From set to list
+    overlap_nodes = [i for i in overlap_nodes]
+    edges = []
+    for i, dihedral1 in enumerate(overlap_nodes):
+        for j, dihedral2 in enumerate(overlap_nodes):
+            # If they have 1 atom in common, then create the edge
+            atoms_in_common = [i for i in dihedral1 if i in dihedral2]
+            if len(atoms_in_common) == 1:
+                edges.append([i, j])
+
+    nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
+    for i, node in enumerate(overlap_nodes):
+        # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+        nodes_features[i] = [atoms_to_dihedral[tuple(node)]]
+
+    edge_index = np.asarray(edges).transpose()
+    return (
+        torch.from_numpy(nodes_features).float(),
+        torch.from_numpy(edge_index).long(),
+        overlap_nodes
+    )
