@@ -103,42 +103,69 @@ class UnweightedDebruijnGraphNet(nn.Module):
         self.conv2 = GraphConv(2*out_channels, 4*out_channels)
         self.conv3 = GraphConv(4*out_channels, 8*out_channels)
         # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
-        self.final_nodes = 7
+        self.final_nodes = 41
         # self.pool = SortPooling(self.final_nodes)
         self.output = nn.Sequential(
             AdaptiveAvgPool1d(self.final_nodes),
             Flatten(),
             Flatten(),
             nn.Linear(self.final_nodes * out_channels * 8, 1)
+        )
+
+    def forward(self, sample):
+        x = sample.x
+        # Dropout layer
+        # x = self.dropout(sample.x, dropout=0.3)
+        x = self.input(x, sample.edge_index)
+        x = F.gelu(x)
+        x = self.conv1(x, sample.edge_index)
+        x = F.gelu(x)
+        x = self.conv2(x, sample.edge_index)
+        x = F.gelu(x)
+        x = self.conv3(x, sample.edge_index)
+        x = F.gelu(x)
+        return self.output(x.reshape(x.size()[1], x.size()[0]).unsqueeze(dim=1))
+
+
+class UnweightedSimplifiedDebruijnGraphNet(nn.Module):
+    def __init__(self, sample=None, out_channels=4):
+        super(UnweightedSimplifiedDebruijnGraphNet, self).__init__()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.dense_input = nn.Linear(7, 7 * 6)
+        self.input = GraphConv(6, out_channels=6 * out_channels)
+        self.conv1 = GraphConv(6 * out_channels, 6 * 2 * out_channels)
+        self.conv2 = GraphConv(6 * 2 * out_channels, 6 * 4 * out_channels)
+        self.conv3 = GraphConv(6 * 4 * out_channels, 6 * 8 * out_channels)
+        # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
+        self.final_nodes = 7
+        # self.pool = SortPooling(self.final_nodes)
+        self.output = nn.Sequential(
+            AdaptiveAvgPool1d(self.final_nodes),
+            Flatten(),
+            Flatten(),
+            nn.Linear(self.final_nodes * 6 * out_channels * 8, 1)
             # nn.Linear(self.final_nodes*8*out_channels, 1)
         )
 
     def forward(self, sample):
         # Dropout layer
         # x = self.dropout(sample.x, dropout=0.3)
-        # save_graph(sample.x, sample.edge_index, "starting_point.gv")
-        x = self.input(sample.x, sample.edge_index)
+        x = sample.x.view(-1)
+        x = self.dense_input(x)
         x = F.gelu(x)
-        # save_graph(x, sample.edge_index, "after_one.gv")
+        x = x.reshape(7, 6)
+
+        x = self.input(x, sample.edge_index)
+        x = F.gelu(x)
         x = self.conv1(x, sample.edge_index)
         x = F.gelu(x)
-        # save_graph(x, sample.edge_index, "after_two.gv")
         x = self.conv2(x, sample.edge_index)
         x = F.gelu(x)
-        # save_graph(x, sample.edge_index, "after_three.gv")
         x = self.conv3(x, sample.edge_index)
         x = F.gelu(x)
         # save_graph(x, sample.edge_index, "after_four.gv")
         # x = self.conv4(x, sample.edge_index)
         # x = F.relu(x)
-        # # Put the graph into a DGL layer
-        # new_sample = Data(x=x, edge_index=sample.edge_index).to(self.device)
-        # nx_graph = to_networkx(new_sample, to_undirected=True)
-        # dgl_graph = DGLGraph()
-        # dgl_graph.from_networkx(nx_graph)
-        # x = self.pool(dgl_graph, x)
-        # x = global_add_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device)).reshape(64)
-        # x = global_sort_pool(x, batch=torch.zeros(len(sample.x)).long().to(self.device), k=self.final_nodes)
         return self.output(x.reshape(x.size()[1], x.size()[0]).unsqueeze(dim=1))
 
     def dropout(self, nodes, dropout):

@@ -19,7 +19,7 @@ from torch_geometric.data import Data
 from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
-from GraphNet import UnweightedDebruijnGraphNet
+from GraphNet import UnweightedDebruijnGraphNet, UnweightedSimplifiedDebruijnGraphNet
 
 assert torch.__version__ == "1.5.0"  # Needed for pytorch-geometric
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -137,9 +137,6 @@ if NORMALIZE_TARGET:
     target_mean = torch.mean(target, dim=0)
     target = ((target - target_mean) / target_std).reshape(shape=(len(target), 1))
 
-with open(f"{DATA_DIR}/simplified-dihedrals.json", "w") as j:
-    json.dump([sample[2] for sample in graph_samples], j)
-
 if NORMALIZE_DATA:
     # Single graph normalization
     samples = normalize(graph_samples, train_ind, False)
@@ -155,7 +152,7 @@ for i, sample in enumerate(samples):
 print("Dataset loaded")
 
 # TODO: batches
-model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
+model = UnweightedSimplifiedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)

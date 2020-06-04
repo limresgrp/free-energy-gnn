@@ -158,7 +158,6 @@ model = UnweightedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)
-# optimizer = torch.optim.Adam(model.parameters(), lr=run_parameters["learning_rate"])
 # TODO: scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
 #                                                        factor=0.7, patience=5,
 #                                                        min_lr=0.00001)
