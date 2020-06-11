@@ -19,7 +19,7 @@ from torch_geometric.data import Data
 from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
-from GraphNet import UnweightedDebruijnGraphNet, UnweightedSimplifiedDebruijnGraphNet
+from GraphNet import UnweightedDebruijnGraphNet, UnweightedSimplifiedDebruijnGraphNet, UnweightedSimplifiedDropoutDebruijnGraphNet
 
 assert torch.__version__ == "1.5.0"  # Needed for pytorch-geometric
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,7 +27,7 @@ if device == "cpu":
     warn("You are using CPU instead of CUDA. The computation will be longer...")
 
 
-seed = 71
+seed = 123450
 # seed = 76583
 random.seed(seed)
 torch.manual_seed(seed)
@@ -47,17 +47,19 @@ if not OVERWRITE_PICKLES:
 
 # Parameters
 run_parameters = {
+    "seed": seed,
+    "sin_cos": True,
     "graph_type": "De Bruijn",
     "out_channels": 4,
     "convolution": "GraphConv",
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
     "epochs": 2000,
-    "patience": 70,
+    "patience": 30,
     "normalize_target": NORMALIZE_TARGET,
     "dataset_perc": 1,
     "shuffle": False,
-    "train_split": 0.2,
+    "train_split": 0.1,
     "validation_split": 0.1,
     "unseen_region": UNSEEN_REGION
 }
@@ -115,7 +117,8 @@ for i in range(N_SAMPLES):
     except FileNotFoundError:
         atoms, edges, angles, dihedrals = mol2graph.get_richgraph("{}/{}.json".format(DATA_DIR, i))
 
-        debruijn = mol2graph.get_central_overlap_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"])
+        debruijn = mol2graph.get_central_overlap_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"],
+                                                       sin_cos_decomposition=run_parameters["sin_cos"])
 
         if OVERWRITE_PICKLES:
             with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
@@ -152,7 +155,7 @@ for i, sample in enumerate(samples):
 print("Dataset loaded")
 
 # TODO: batches
-model = UnweightedSimplifiedDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
+model = UnweightedSimplifiedDropoutDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)

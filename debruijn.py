@@ -53,7 +53,7 @@ run_parameters = {
     "convolutions": 3,
     "learning_rate": 0.0001 if NORMALIZE_TARGET else 0.001,
     "epochs": 2000,
-    "patience": 100,
+    "patience": 70,
     "normalize_target": NORMALIZE_TARGET,
     "dataset_perc": 1,
     "shuffle": False,

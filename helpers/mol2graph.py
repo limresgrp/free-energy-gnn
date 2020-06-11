@@ -218,7 +218,7 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
     )
 
 
-def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False):
+def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False, sin_cos_decomposition=False):
     if shuffle:
         random.shuffle(dihedrals)
 
@@ -242,10 +242,18 @@ def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False):
             if len(atoms_in_common) == 1:
                 edges.append([i, j])
 
-    nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
-    for i, node in enumerate(overlap_nodes):
-        # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
-        nodes_features[i] = [atoms_to_dihedral[tuple(node)]]
+
+    if sin_cos_decomposition:
+        nodes_features = np.zeros(shape=(len(overlap_nodes), 2))
+        for i, node in enumerate(overlap_nodes):
+            # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+            nodes_features[i, 0] = np.sin(np.deg2rad(atoms_to_dihedral[tuple(node)]))
+            nodes_features[i, 1] = np.cos(np.deg2rad(atoms_to_dihedral[tuple(node)]))
+    else:
+        nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
+        for i, node in enumerate(overlap_nodes):
+            # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+            nodes_features[i, :] = [atoms_to_dihedral[tuple(node)]]
 
     edge_index = np.asarray(edges).transpose()
     return (
