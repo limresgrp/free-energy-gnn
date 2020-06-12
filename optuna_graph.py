@@ -156,6 +156,13 @@ def define_model(trial, sample):
     final_pooling = trial.suggest_categorical("final_pooling", ["avg_pool_x", "sort_pooling"])
     dense_output = trial.suggest_categorical("dense_output", [True, False])
     channels_optuna = trial.suggest_int("channels_optuna", 1, 3)
+    print({
+        "channels_optuna": channels_optuna,
+        "dense_output": dense_output,
+        "final_pooling": final_pooling,
+        "topk_ratio": topk_ratio,
+        "pooling_layers": pooling_layers,
+    })
     return TopKPoolingNet(sample, pooling_layers, topk_ratio, final_pooling, dense_output, channels_optuna)
 
 
@@ -167,6 +174,10 @@ def objective(trial):
     optimizer_name = trial.suggest_categorical('optimizer', ['MomentumSGD', 'Adam'])
     lr = trial.suggest_loguniform('learning_rate', 1e-5, 1e-3)
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
+    print({
+        "lr": lr,
+        "optimizer": optimizer,
+    })
     start = time.time()
     for i in range(run_parameters["epochs"]):
         model.train()
