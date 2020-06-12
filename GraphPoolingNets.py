@@ -66,16 +66,16 @@ class TopKPoolingNet(nn.Module):
 
         x = self.input(x, edge_index)
         x = F.gelu(x)
-        if self.pooling_layers > 0:
+        if self.pooling_layers > 1:
             pooled = self.topkpool1(x, edge_index)
             x, edge_index = pooled[0], pooled[1]
-            x = self.conv1(x, edge_index)
-            x = F.gelu(x)
-            if self.pooling_layers > 1:
-                pooled = self.topkpool2(x, edge_index)
-                x, edge_index = pooled[0], pooled[1]
-                x = self.conv2(x, edge_index)
-                x = F.gelu(x)
+        x = self.conv1(x, edge_index)
+        x = F.gelu(x)
+        if self.pooling_layers > 0:
+            pooled = self.topkpool2(x, edge_index)
+            x, edge_index = pooled[0], pooled[1]
+        x = self.conv2(x, edge_index)
+        x = F.gelu(x)
 
         # x = self.conv3(x, edge_index)
         # x = F.gelu(x)
