@@ -155,7 +155,7 @@ for i, sample in enumerate(samples):
 print("Dataset loaded")
 
 # TODO: batches
-model = UnweightedSimplifiedDropoutDebruijnGraphNet(dataset[0], out_channels=run_parameters["out_channels"]).to(device)
+model = UnweightedSimplifiedDropoutDebruijnGraphNet(dataset[0]).to(device)
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)
