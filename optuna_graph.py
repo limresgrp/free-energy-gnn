@@ -172,7 +172,7 @@ def objective(trial):
     model = define_model(trial, dataset[0]).to(device)
     criterion = L1Loss()
     optimizer_name = trial.suggest_categorical('optimizer', ['MomentumSGD', 'Adam'])
-    lr = trial.suggest_loguniform('learning_rate', 1e-5, 1e-3)
+    lr = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
     optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
     print({
         "lr": lr,

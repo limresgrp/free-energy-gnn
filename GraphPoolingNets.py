@@ -39,20 +39,21 @@ class TopKPoolingNet(nn.Module):
         self.input = GraphConv(augmented_channels_multiplier, self.channels)
         self.topkpool1 = TopKPooling(self.channels, ratio=topk_ratio+0.1)
         self.conv1 = GraphConv(self.channels, 2 * self.channels)
-        self.topkpool2 = TopKPooling(2*self.channels, ratio=topk_ratio+0.1)
+        self.topkpool2 = TopKPooling(2*self.channels, ratio=topk_ratio)
         self.conv2 = GraphConv(2 * self.channels, 4 * self.channels)
 
         self.final_pooling = final_pooling
         self.pooling_layers = pooling_layers
-        self.final_nodes = 2
+        self.final_nodes = 3
+        self.input_nodes_output_layer = self.final_nodes * self.channels * (2*pooling_layers) if pooling_layers > 0 else self.final_nodes * self.channels * 4
         if dense_output:
             self.output = nn.Sequential(
-                nn.Linear(self.final_nodes * self.channels * (2*pooling_layers), 2 * self.channels),
+                nn.Linear(self.input_nodes_output_layer, 2 * self.channels),
                 nn.GELU(),
                 nn.Linear(2 * self.channels, 1)
             )
         else:
-            self.output = nn.Linear(self.final_nodes * self.channels * (2*pooling_layers), 1)
+            self.output = nn.Linear(self.input_nodes_output_layer, 1)
 
     def forward(self, sample):
         x, edge_index = sample.x, sample.edge_index
