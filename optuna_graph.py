@@ -171,9 +171,12 @@ def objective(trial):
     dataset, train_ind, validation_ind, test_ind, target_mean, target_std = read_dataset(train_perc)
     model = define_model(trial, dataset[0]).to(device)
     criterion = L1Loss()
-    optimizer_name = trial.suggest_categorical('optimizer', ['MomentumSGD', 'Adam'])
+    optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
     lr = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
-    optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
+    if optimizer_name == "SGD":
+        optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr, momentum=0.8)
+    else:
+        optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
     print({
         "lr": lr,
         "optimizer": optimizer,
