@@ -152,10 +152,10 @@ def read_dataset(train_perc):
 
 def define_model(trial, sample):
     pooling_layers = trial.suggest_int("pooling_layers", 0, 2)
-    pooling_type = trial.suggest_categorical("pooling_type", ["TopKPooling", "SAGPooling"])
+    pooling_type = trial.suggest_categorical("pooling_type", ["TopKPooling", "SAGPooling", "EdgePooling"])
     convolution_type = trial.suggest_categorical("convolution_type", ["GraphConv", "GATConv"])
     pooling_nodes_ratio = trial.suggest_discrete_uniform('pooling_nodes_ratio', 0.4, 0.7, 0.1)
-    final_pooling = trial.suggest_categorical("final_pooling", ["avg_pool_x", "sort_pooling"])
+    final_pooling = trial.suggest_categorical("final_pooling", ["max_pool_x", "avg_pool_x", "sort_pooling", "topk"])
     dense_output = trial.suggest_categorical("dense_output", [True, False])
     channels_optuna = trial.suggest_int("channels_optuna", 1, 2)
     optuna_multiplier = trial.suggest_int("optuna_last_conv_multiplier", 1, 2)
@@ -181,7 +181,7 @@ def objective(trial):
     print(model)
     criterion = L1Loss()
     optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
-    lr = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
+    lr = trial.suggest_loguniform('learning_rate', 1e-5, 5e-3)
     if optimizer_name == "SGD":
         momentum = trial.suggest_loguniform("momentum", 0.6, 0.99)
         optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
@@ -257,7 +257,14 @@ def objective(trial):
 
 
 study_name = "Alanine Dipeptide - old dataset"
-study = optuna.create_study(study_name=study_name, storage='sqlite:///aladipepold.db', load_if_exists=True)
+study = optuna.create_study(
+    study_name=study_name,
+    storage='sqlite:///aladipepold.db',
+    load_if_exists=True,
+    pruner=optuna.pruners.MedianPruner(n_startup_trials=5,
+                                       n_warmup_steps=40,
+                                       interval_steps=5)
+)
 study.optimize(objective, n_trials=10)
 
 pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
