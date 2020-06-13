@@ -10,7 +10,6 @@ class EarlyStopping:
         self.best_score = None
         self.counter = 0
 
-
     def check(self, loss):
         """Return bool whether we should stop the training or not"""
         self.losses.append(loss)

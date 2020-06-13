@@ -15,6 +15,7 @@ import torch
 from torch.nn import L1Loss
 import torch.optim as optim
 from torch_geometric.data import Data
+from torch_geometric.nn import TopKPooling, SAGPooling
 import optuna
 
 # Custom imports
@@ -22,6 +23,7 @@ from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
 from GraphPoolingNets import TopKPoolingNet
+from torch_geometric.nn.conv import GraphConv, GATConv
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if device == "cpu":
@@ -64,8 +66,6 @@ run_parameters = {
     "validation_split": 0.1,
     "unseen_region": UNSEEN_REGION
 }
-stopping = EarlyStopping(patience=run_parameters["patience"])
-
 
 def read_dataset(train_perc):
     run_parameters["train_split"] = train_perc
@@ -151,37 +151,46 @@ def read_dataset(train_perc):
 
 
 def define_model(trial, sample):
-    pooling_layers = trial.suggest_int("topk_pooling", 0, 2)
-    topk_ratio = trial.suggest_discrete_uniform('topk_ratio', 0.4, 0.8, 0.1)
+    pooling_layers = trial.suggest_int("pooling_layers", 0, 2)
+    pooling_type = trial.suggest_categorical("pooling_type", ["TopKPooling", "SAGPooling"])
+    convolution_type = trial.suggest_categorical("convolution_type", ["GraphConv", "GATConv"])
+    pooling_nodes_ratio = trial.suggest_discrete_uniform('pooling_nodes_ratio', 0.4, 0.7, 0.1)
     final_pooling = trial.suggest_categorical("final_pooling", ["avg_pool_x", "sort_pooling"])
     dense_output = trial.suggest_categorical("dense_output", [True, False])
-    channels_optuna = trial.suggest_int("channels_optuna", 1, 3)
-    print({
+    channels_optuna = trial.suggest_int("channels_optuna", 1, 2)
+    optuna_multiplier = trial.suggest_int("optuna_last_conv_multiplier", 1, 2)
+    final_nodes = trial.suggest_int("final_nodes", 1, 3)
+    pprint({
         "channels_optuna": channels_optuna,
         "dense_output": dense_output,
         "final_pooling": final_pooling,
-        "topk_ratio": topk_ratio,
+        "topk_ratio": pooling_nodes_ratio,
         "pooling_layers": pooling_layers,
+        "pooling_type": pooling_type,
+        "final_nodes": final_nodes,
+        "optuna_multiplier": optuna_multiplier
     })
-    return TopKPoolingNet(sample, pooling_layers, topk_ratio, final_pooling, dense_output, channels_optuna)
+    return TopKPoolingNet(sample, pooling_layers, pooling_type, pooling_nodes_ratio, convolution_type, final_pooling, dense_output, channels_optuna, final_nodes, optuna_multiplier)
 
 
 def objective(trial):
+    stopping = EarlyStopping(run_parameters["patience"])
     train_perc = trial.suggest_discrete_uniform("training_percentage", 0.05, 0.1, 0.05)
     dataset, train_ind, validation_ind, test_ind, target_mean, target_std = read_dataset(train_perc)
     model = define_model(trial, dataset[0]).to(device)
+    print(model)
     criterion = L1Loss()
     optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
     lr = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
     if optimizer_name == "SGD":
-        optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr, momentum=0.8)
+        momentum = trial.suggest_loguniform("momentum", 0.6, 0.99)
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     else:
-        optimizer = getattr(optim, optimizer_name)(model.parameters(), lr=lr)
-    print({
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+    pprint({
         "lr": lr,
         "optimizer": optimizer,
     })
-    start = time.time()
     for i in range(run_parameters["epochs"]):
         model.train()
         random.shuffle(train_ind)
@@ -219,29 +228,37 @@ def objective(trial):
             # Check Early Stopping
             if stopping.check(val_loss):
                 run_parameters["epochs"] = i + 1
-                print(f"Training finished because of early stopping. Best loss on validation: {stopping.best_score}")
+                print(f"Training finished because of early stopping. Best loss on validation: {stopping.best_score:.2f}")
                 break
 
         trial.report(val_loss, i+1)
 
         # Handle pruning based on the intermediate value.
-        if trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        # if trial.should_prune():
+        #     raise optuna.exceptions.TrialPruned()
+
+    predictions = []
+    errors = []
+    model.eval()
+    for j in test_ind:
+        # Forward pass: Compute predicted y by passing x to the model
+        prediction = model(dataset[j].to(device))
+        error = prediction - dataset[j].y
+        predictions.append(prediction.item())
+        errors.append(error.item())
+
+    # Compute MAE
+    mae = np.absolute(np.asarray(errors)).mean()
+    if NORMALIZE_TARGET:
+        mae *= target_std
+    print("Mean Absolute Error on test: {:.2f}".format(mae))
+
+    return mae
 
 
-    duration = (time.time() - start) / 60.0  # Minutes
-    hours = np.int(np.floor(duration / 60.0))
-    minutes = np.int(np.floor(duration - hours * 60))
-
-    # No test, only validation
-    #test(trial, model, dataset, test_ind)
-
-    return val_loss
-
-
-study_name = "TopK - avg_pool_x"
-study = optuna.create_study(study_name=study_name, storage='sqlite:///dontknowhereitislocated.db', load_if_exists=True)
-study.optimize(objective, n_trials=5)
+study_name = "Alanine Dipeptide - old dataset"
+study = optuna.create_study(study_name=study_name, storage='sqlite:///aladipepold.db', load_if_exists=True)
+study.optimize(objective, n_trials=10)
 
 pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
 complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]

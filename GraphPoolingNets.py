@@ -4,9 +4,9 @@ import torch.nn as nn
 from torch.nn import AdaptiveAvgPool1d
 import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ELU, AdaptiveMaxPool1d
-from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv
+from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv, GATConv
 from torch_geometric.nn.pool import TopKPooling
-from torch_geometric.nn import global_sort_pool, global_add_pool, global_mean_pool, TopKPooling, avg_pool_x
+from torch_geometric.nn import global_sort_pool, global_add_pool, global_mean_pool, TopKPooling, SAGPooling, avg_pool_x
 # from torch_geometric.data import Data
 # from torch_geometric.utils import to_networkx
 # from dgl import DGLGraph
@@ -27,25 +27,27 @@ class Flatten(nn.Module):
 
 # It works good with SortPooling and 3 nodes
 class TopKPoolingNet(nn.Module):
-    def __init__(self, sample=None, pooling_layers=1, topk_ratio=0.6, final_pooling="avg_pool_x", dense_output = False, channels_optuna=2):
+    def __init__(self, sample=None, pooling_layers=1, pooling_type="TopKPooling", topk_ratio=0.6, convolution_type="GraphConv", final_pooling="avg_pool_x", dense_output = False, channels_optuna=2, final_nodes=2, optuna_multiplier=1):
         super(TopKPoolingNet, self).__init__()
         out_channels = 4
         augmented_channels_multiplier = 4
+        convolution_type = GraphConv if convolution_type == "GraphConv" else GATConv if convolution_type == "GATConv" else GraphConv
+        pooling_type = TopKPooling if pooling_type == "TopKPooling" else SAGPooling if pooling_type == "SAGPooling" else TopKPooling
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.empty_edges = torch.tensor([[], []], dtype=torch.long, device=self.device)
         self.channels = out_channels * augmented_channels_multiplier * channels_optuna
         self.augmented_channels_multiplier = augmented_channels_multiplier
         self.dense_input = GraphConv(sample.num_node_features, augmented_channels_multiplier)
-        self.input = GraphConv(augmented_channels_multiplier, self.channels)
-        self.topkpool1 = TopKPooling(self.channels, ratio=topk_ratio+0.1)
-        self.conv1 = GraphConv(self.channels, 2 * self.channels)
-        self.topkpool2 = TopKPooling(2*self.channels, ratio=topk_ratio)
-        self.conv2 = GraphConv(2 * self.channels, 4 * self.channels)
+        self.input = convolution_type(augmented_channels_multiplier, self.channels)
+        self.topkpool1 = pooling_type(self.channels, ratio=topk_ratio+0.1)
+        self.conv1 = convolution_type(self.channels, 2 * self.channels)
+        self.topkpool2 = pooling_type(2*self.channels, ratio=topk_ratio)
+        self.conv2 = convolution_type(2 * self.channels, 4 * self.channels * optuna_multiplier)
 
         self.final_pooling = final_pooling
         self.pooling_layers = pooling_layers
-        self.final_nodes = 3
-        self.input_nodes_output_layer = self.final_nodes * self.channels * (2*pooling_layers) if pooling_layers > 0 else self.final_nodes * self.channels * 4
+        self.final_nodes = final_nodes
+        self.input_nodes_output_layer = self.final_nodes * self.channels * 4 * optuna_multiplier
         if dense_output:
             self.output = nn.Sequential(
                 nn.Linear(self.input_nodes_output_layer, 2 * self.channels),
