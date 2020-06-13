@@ -7,6 +7,7 @@ from torch.nn import Sequential, Linear, ELU, AdaptiveMaxPool1d
 from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv, GATConv
 from torch_geometric.nn.pool import TopKPooling
 from torch_geometric.nn import global_sort_pool, global_add_pool, global_mean_pool, TopKPooling, SAGPooling, avg_pool_x, EdgePooling
+from torch_geometric.nn.pool.asap import ASAPooling
 # from torch_geometric.data import Data
 # from torch_geometric.utils import to_networkx
 # from dgl import DGLGraph
@@ -32,7 +33,7 @@ class TopKPoolingNet(nn.Module):
         out_channels = 4
         augmented_channels_multiplier = 4
         convolution_type = GraphConv if convolution_type == "GraphConv" else GATConv if convolution_type == "GATConv" else GraphConv
-        self.pooling_type = TopKPooling if pooling_type == "TopKPooling" else SAGPooling if pooling_type == "SAGPooling" else EdgePooling
+        self.pooling_type = TopKPooling if pooling_type == "TopKPooling" else SAGPooling if pooling_type == "SAGPooling" else EdgePooling if pooling_type == "EdgePooling" else ASAPooling
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.empty_edges = torch.tensor([[], []], dtype=torch.long, device=self.device)
         self.channels = out_channels * augmented_channels_multiplier * channels_optuna

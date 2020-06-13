@@ -151,8 +151,8 @@ def read_dataset(train_perc):
 
 
 def define_model(trial, sample):
-    pooling_layers = trial.suggest_int("pooling_layers", 0, 2)
-    pooling_type = trial.suggest_categorical("pooling_type", ["TopKPooling", "SAGPooling", "EdgePooling"])
+    pooling_layers = trial.suggest_int("pooling_layers", 1, 2)
+    pooling_type = trial.suggest_categorical("pooling_type", ["TopKPooling", "SAGPooling", "EdgePooling", "ASAPooling"])
     convolution_type = trial.suggest_categorical("convolution_type", ["GraphConv", "GATConv"])
     pooling_nodes_ratio = trial.suggest_discrete_uniform('pooling_nodes_ratio', 0.4, 0.7, 0.1)
     final_pooling = trial.suggest_categorical("final_pooling", ["max_pool_x", "avg_pool_x", "sort_pooling", "topk"])
@@ -181,7 +181,7 @@ def objective(trial):
     print(model)
     criterion = L1Loss()
     optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
-    lr = trial.suggest_loguniform('learning_rate', 1e-5, 5e-3)
+    lr = trial.suggest_loguniform('learning_rate', 1e-4, 5e-3)
     if optimizer_name == "SGD":
         momentum = trial.suggest_loguniform("momentum", 0.6, 0.99)
         optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
