@@ -45,11 +45,13 @@ class TopKPoolingNet(nn.Module):
         else:
             self.topkpool1 = self.pooling_type(self.channels, ratio=topk_ratio+0.1)
         self.conv1 = convolution_type(self.channels, 2 * self.channels)
+
+        self.conv2 = convolution_type(2 * self.channels, 4 * self.channels)
         if pooling_type == "EdgePooling":
-            self.topkpool2 = self.pooling_type(2 * self.channels)
+            self.topkpool2 = self.pooling_type(4 * self.channels)
         else:
-            self.topkpool2 = self.pooling_type(2 * self.channels, ratio=topk_ratio)
-        self.conv2 = convolution_type(2 * self.channels, 4 * self.channels * optuna_multiplier)
+            self.topkpool2 = self.pooling_type(4 * self.channels, ratio=topk_ratio)
+        self.conv3 = convolution_type(4 * self.channels, 8 * self.channels * optuna_multiplier)
 
         self.final_pooling = final_pooling
         self.pooling_layers = pooling_layers
@@ -57,7 +59,7 @@ class TopKPoolingNet(nn.Module):
         if self.final_pooling == "topk":
             self.last_pooling_layer = TopKPooling(4 * self.channels * optuna_multiplier,
                                                   ratio=(self.final_nodes / float(len(sample.x))) + 0.01)
-        self.input_nodes_output_layer = self.final_nodes * self.channels * 4 * optuna_multiplier
+        self.input_nodes_output_layer = self.final_nodes * self.channels * 8 * optuna_multiplier
         if dense_output:
             self.output = nn.Sequential(
                 nn.Linear(self.input_nodes_output_layer, 2 * self.channels),
@@ -84,15 +86,17 @@ class TopKPoolingNet(nn.Module):
             x, edge_index = pooled[0], pooled[1]
         x = self.conv1(x, edge_index)
         x = F.gelu(x)
+
+        x = self.conv2(x, edge_index)
+        x = F.gelu(x)
+
         if self.pooling_layers > 0:
             batch = torch.tensor([0 for _ in x], dtype=torch.long, device=self.device)
             pooled = self.topkpool2(x, edge_index, batch=batch)
             x, edge_index = pooled[0], pooled[1]
-        x = self.conv2(x, edge_index)
-        x = F.gelu(x)
 
-        # x = self.conv3(x, edge_index)
-        # x = F.gelu(x)
+        x = self.conv3(x, edge_index)
+        x = F.gelu(x)
         batch = torch.tensor([0 for _ in x], dtype=torch.long, device=self.device)
         # With sort_pool it works but we have the same problem: the output layer learns the order of the pooled nodes
         # using k = 3, let's see what happens by shuffling the nodes
