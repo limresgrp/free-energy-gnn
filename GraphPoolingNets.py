@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ELU, AdaptiveMaxPool1d
 from torch_geometric.nn.conv import NNConv, CGConv, GatedGraphConv, GraphConv, GATConv
 from torch_geometric.nn.pool import TopKPooling
-from torch_geometric.nn import global_sort_pool, global_add_pool, global_mean_pool, TopKPooling, SAGPooling, avg_pool_x, EdgePooling
+from torch_geometric.nn import global_sort_pool, global_add_pool, global_mean_pool, TopKPooling, SAGPooling, avg_pool_x, max_pool_x, EdgePooling
 from torch_geometric.nn.pool.asap import ASAPooling
 # from torch_geometric.data import Data
 # from torch_geometric.utils import to_networkx
@@ -40,12 +40,12 @@ class TopKPoolingNet(nn.Module):
         self.augmented_channels_multiplier = augmented_channels_multiplier
         self.dense_input = GraphConv(sample.num_node_features, augmented_channels_multiplier)
         self.input = convolution_type(augmented_channels_multiplier, self.channels)
-        if pooling_type == "EdgePooling":
-            self.topkpool1 = self.pooling_type(self.channels)
-        else:
-            self.topkpool1 = self.pooling_type(self.channels, ratio=topk_ratio+0.1)
-        self.conv1 = convolution_type(self.channels, 2 * self.channels)
 
+        self.conv1 = convolution_type(self.channels, 2 * self.channels)
+        if pooling_type == "EdgePooling":
+            self.topkpool1 = self.pooling_type(2 * self.channels)
+        else:
+            self.topkpool1 = self.pooling_type(2 * self.channels, ratio=topk_ratio+0.1)
         self.conv2 = convolution_type(2 * self.channels, 4 * self.channels)
         if pooling_type == "EdgePooling":
             self.topkpool2 = self.pooling_type(4 * self.channels)
@@ -57,8 +57,12 @@ class TopKPoolingNet(nn.Module):
         self.pooling_layers = pooling_layers
         self.final_nodes = final_nodes
         if self.final_pooling == "topk":
-            self.last_pooling_layer = TopKPooling(4 * self.channels * optuna_multiplier,
-                                                  ratio=(self.final_nodes / float(len(sample.x))) + 0.01)
+            ratio = 0.5 if pooling_type == "EdgePooling" else topk_ratio
+            ratio = ratio**pooling_layers
+            current = np.ceil(len(sample.x) * ratio)
+            ratio = self.final_nodes / current
+            self.last_pooling_layer = TopKPooling(8 * self.channels * optuna_multiplier,
+                                                  ratio=ratio)
         self.input_nodes_output_layer = self.final_nodes * self.channels * 8 * optuna_multiplier
         if dense_output:
             self.output = nn.Sequential(
@@ -80,12 +84,13 @@ class TopKPoolingNet(nn.Module):
 
         x = self.input(x, edge_index)
         x = F.gelu(x)
+        x = self.conv1(x, edge_index)
+        x = F.gelu(x)
+
         if self.pooling_layers > 1:
             batch = torch.tensor([0 for _ in x], dtype=torch.long, device=self.device)
             pooled = self.topkpool1(x, edge_index, batch=batch)
             x, edge_index = pooled[0], pooled[1]
-        x = self.conv1(x, edge_index)
-        x = F.gelu(x)
 
         x = self.conv2(x, edge_index)
         x = F.gelu(x)
@@ -110,7 +115,7 @@ class TopKPoolingNet(nn.Module):
             x = pooled[0]
         elif self.final_pooling == "max_pool_x":
             cluster = torch.as_tensor([i % self.final_nodes for i in range(len(x))], device=self.device)
-            (x, cluster) = avg_pool_x(cluster, x, batch)
+            (x, cluster) = max_pool_x(cluster, x, batch)
 
         return self.output(x.view(-1))
 
