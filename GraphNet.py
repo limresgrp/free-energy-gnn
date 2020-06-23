@@ -129,7 +129,7 @@ class UnweightedDebruijnGraphNet(nn.Module):
 
 # It works good, converge faster (sin, cos even better) than the flat deep neural network
 class UnweightedSimplifiedDebruijnGraphNet(nn.Module):
-    def __init__(self, sample=None, out_channels=4, augmented_channels_multiplier=5):
+    def __init__(self, sample=None, out_channels=4, augmented_channels_multiplier=5, convlayers=4):
         super(UnweightedSimplifiedDebruijnGraphNet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.empty_edges = torch.tensor([[], []], dtype=torch.long, device=self.device)
@@ -142,12 +142,14 @@ class UnweightedSimplifiedDebruijnGraphNet(nn.Module):
         self.conv3 = GraphConv(4 * self.channels, 8 * self.channels)
         # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
         self.final_nodes = len(sample.x)
+        self.convlayers = convlayers
+        self.hidden_channels = 2**(convlayers-1)
         # self.pool = SortPooling(self.final_nodes)
         self.output = nn.Sequential(
             AdaptiveAvgPool1d(self.final_nodes),
             Flatten(),
             Flatten(),
-            nn.Linear(self.final_nodes * self.channels * 8, 1)
+            nn.Linear(self.final_nodes * self.channels * self.hidden_channels, 1)
             # nn.Linear(self.final_nodes*8*out_channels, 1)
         )
 
@@ -158,83 +160,19 @@ class UnweightedSimplifiedDebruijnGraphNet(nn.Module):
 
         x = self.input(x, edge_index)
         x = F.gelu(x)
-        x = self.conv1(x, edge_index)
-        x = F.gelu(x)
-        x = self.conv2(x, edge_index)
-        x = F.gelu(x)
-        x = self.conv3(x, edge_index)
-        x = F.gelu(x)
+        if self.convlayers > 1:
+            x = self.conv1(x, edge_index)
+            x = F.gelu(x)
+        if self.convlayers > 2:
+            x = self.conv2(x, edge_index)
+            x = F.gelu(x)
+        if self.convlayers > 3:
+            x = self.conv3(x, edge_index)
+            x = F.gelu(x)
         # save_graph(x, sample.edge_index, "after_four.gv")
         # x = self.conv4(x, sample.edge_index)
         # x = F.relu(x)
 
         return self.output(x.reshape(x.size()[1], x.size()[0]).unsqueeze(dim=1))
-
-# It works good with SortPooling and 3 nodes
-class UnweightedSimplifiedDropoutDebruijnGraphNet(nn.Module):
-    def __init__(self, sample=None, out_channels=4, augmented_channels_multiplier=4):
-        super(UnweightedSimplifiedDropoutDebruijnGraphNet, self).__init__()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.empty_edges = torch.tensor([[], []], dtype=torch.long, device=self.device)
-        self.channels = out_channels * augmented_channels_multiplier * 2
-        self.augmented_channels_multiplier = augmented_channels_multiplier
-        self.dense_input = GraphConv(sample.num_node_features, augmented_channels_multiplier)
-        self.input = GraphConv(augmented_channels_multiplier, self.channels)
-        self.topkpool1 = TopKPooling(self.channels, ratio=0.8)
-        self.conv1 = GraphConv(self.channels, 2 * self.channels)
-        self.topkpool2 = TopKPooling(2*self.channels, ratio=0.7)
-        self.conv2 = GraphConv(2 * self.channels, 4 * self.channels)
-
-        self.final_nodes = 2
-        self.output = nn.Sequential(
-            nn.Linear(self.final_nodes * self.channels * 4, 2 * self.channels),
-            nn.GELU(),
-            nn.Linear(2 * self.channels, 1)
-        )
-
-    def forward(self, sample):
-        x, edge_index = sample.x, sample.edge_index
-
-        # Dropout layer
-        # edge_index = self.dropout_edges(edge_index, dropout=0.2)
-
-        x = self.dense_input(x, self.empty_edges)
-        x = F.gelu(x)
-
-        x = self.input(x, edge_index)
-        x = F.gelu(x)
-        pooled = self.topkpool1(x, edge_index)
-        x, edge_index = pooled[0], pooled[1]
-        x = self.conv1(x, edge_index)
-        x = F.gelu(x)
-        pooled = self.topkpool2(x, edge_index)
-        x, edge_index = pooled[0], pooled[1]
-        x = self.conv2(x, edge_index)
-        x = F.gelu(x)
-        # x = self.conv3(x, edge_index)
-        # x = F.gelu(x)
-        batch = torch.tensor([0 for _ in x], dtype=torch.long, device=self.device)
-        # With sort_pool it works but we have the same problem: the output layer learns the order of the pooled nodes
-        # using k = 3, let's see what happens by shuffling the nodes
-        # x = global_sort_pool(x, batch, self.final_nodes)
-        cluster = torch.as_tensor([i % self.final_nodes for i in range(len(x))], device=self.device)
-        (x, cluster) = avg_pool_x(cluster, x, batch)
-        return self.output(x.view(-1))
-
-    def dropout_edges(self, edge_index, dropout):
-        # Do not drop anything in validation/test
-        if not self.training:
-            i = 1
-            return edge_index
-
-        indexes = set([i for i in range(len(edge_index[0]))])
-
-        for i, edge in enumerate(edge_index[0]):
-            to_drop = random.random()
-            if to_drop < dropout:
-                indexes.remove(i)
-
-        return edge_index[:, list(indexes)]
-
 
 
