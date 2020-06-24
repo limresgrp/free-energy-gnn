@@ -46,15 +46,16 @@ class SimplifiedLinearNet(nn.Module):
 
 
 class LinearNet(nn.Module):
-    def __init__(self, sample):
+    def __init__(self, sample, nodes1=256, nodes2=1024, nodes3=128, nodes4=32):
         super(LinearNet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.nodes = len(sample.x)
-        self.input = nn.Linear(self.nodes, 256)
-        self.middle = nn.Linear(256, 1024)
-        self.middle2 = nn.Linear(1024, 128)
-        self.middle3 = nn.Linear(128, 32)
-        self.output = nn.Linear(32, 1)
+        self.nodes_features = sample.num_node_features
+        self.input = nn.Linear(self.nodes * self.nodes_features, nodes1)
+        self.middle = nn.Linear(nodes1, nodes2)
+        self.middle2 = nn.Linear(nodes2, nodes3)
+        self.middle3 = nn.Linear(nodes3, nodes4)
+        self.output = nn.Linear(nodes4, 1)
 
     def forward(self, sample):
         x = sample.x.view(-1)

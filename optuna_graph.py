@@ -24,6 +24,7 @@ from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
 from GraphPoolingNets import TopKPoolingNet, GraphConvPoolNet
 from GraphNet import UnweightedSimplifiedDebruijnGraphNet
+from LinearNet import LinearNet
 from torch_geometric.nn.conv import GraphConv, GATConv
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -43,7 +44,7 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = False
+OVERWRITE_PICKLES = True
 UNSEEN_REGION = None  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
@@ -186,12 +187,25 @@ def define_model_flatten(trial, sample):
     })
     return UnweightedSimplifiedDebruijnGraphNet(sample, channels_multiplier, optuna_multiplier, convlayers)
 
+def define_model_linear(trial, sample):
+    nodes1 = trial.suggest_int("nodes1", 32, 256)
+    nodes2 = trial.suggest_int("nodes2", 256, 512)
+    nodes3 = trial.suggest_int("nodes3", 256, 512)
+    nodes4 = trial.suggest_int("nodes4", 32, 256)
+    pprint({
+        "nodes1": nodes1,
+        "nodes2": nodes2,
+        "nodes3": nodes3,
+        "nodes4": nodes4
+    })
+    return LinearNet(sample, nodes1, nodes2, nodes3, nodes4)
+
 
 def objective(trial):
     stopping = EarlyStopping(run_parameters["patience"])
     train_perc = 0.1
     dataset, train_ind, validation_ind, test_ind, target_mean, target_std = read_dataset(train_perc)
-    model = define_model_flatten(trial, dataset[0]).to(device)
+    model = define_model_linear(trial, dataset[0]).to(device)
     print(model)
     criterion = L1Loss()
     optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
@@ -270,10 +284,10 @@ def objective(trial):
     return mae
 
 
-study_name = "Alanine Dipeptide - old dataset"
+study_name = "Alanine Dipeptide - old dataset - linear"
 study = optuna.create_study(
     study_name=study_name,
-    storage='sqlite:///aladipepold_flatten.db',
+    storage='sqlite:///aladipepold_linear.db',
     load_if_exists=True,
     pruner=optuna.pruners.MedianPruner(n_startup_trials=5,
                                        n_warmup_steps=40,
