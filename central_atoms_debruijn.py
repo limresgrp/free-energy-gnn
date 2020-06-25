@@ -19,7 +19,7 @@ from torch_geometric.data import Data
 from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
-from GraphNet import UnweightedDebruijnGraphNet, UnweightedSimplifiedDebruijnGraphNet, UnweightedSimplifiedDropoutDebruijnGraphNet
+from GraphNet import UnweightedDebruijnGraphNet, UnweightedSimplifiedDebruijnGraphNet
 
 assert torch.__version__ == "1.5.0"  # Needed for pytorch-geometric
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,7 +27,7 @@ if device == "cpu":
     warn("You are using CPU instead of CUDA. The computation will be longer...")
 
 
-seed = 123450
+seed = 123454
 # seed = 76583
 random.seed(seed)
 torch.manual_seed(seed)
@@ -39,7 +39,7 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = False
+OVERWRITE_PICKLES = True
 UNSEEN_REGION = None  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
@@ -117,9 +117,9 @@ for i in range(N_SAMPLES):
     except FileNotFoundError:
         atoms, edges, angles, dihedrals = mol2graph.get_richgraph("{}/{}.json".format(DATA_DIR, i))
 
-        debruijn = mol2graph.get_central_overlap_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"],
-                                                       sin_cos_decomposition=run_parameters["sin_cos"])
-
+        # debruijn = mol2graph.get_central_overlap_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"],
+        #                                                sin_cos_decomposition=run_parameters["sin_cos"])
+        debruijn = mol2graph.get_debruijn_graph(atoms, angles, dihedrals, shuffle=run_parameters["shuffle"], sin_cos_decomposition=run_parameters["sin_cos"])
         if OVERWRITE_PICKLES:
             with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
                 pickle.dump(debruijn, p)
@@ -155,7 +155,7 @@ for i, sample in enumerate(samples):
 print("Dataset loaded")
 
 # TODO: batches
-model = UnweightedSimplifiedDropoutDebruijnGraphNet(dataset[0]).to(device)
+model = UnweightedSimplifiedDebruijnGraphNet(dataset[0], 5, 5, 3).to(device)
 
 stopping = EarlyStopping(patience=run_parameters["patience"])
 optimizer = torch.optim.SGD(model.parameters(), lr=run_parameters["learning_rate"], momentum=0.8)

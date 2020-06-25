@@ -175,7 +175,7 @@ def get_dihedrals_graph(atoms, dihedrals, angles_list):
     return get_graph(dihedrals, atoms, "dihedrals", angles_list)
 
 
-def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
+def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False, sin_cos_decomposition=False):
     # maps to get directly value from angles and dihedrals
     if shuffle:
         random.shuffle(dihedrals)
@@ -204,10 +204,17 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
     # TODO: (for now there aren't) Remove nodes without an edge
     # There are helpers for this
 
-    nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
-    for i, node in enumerate(overlap_nodes):
-        # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
-        nodes_features[i] = [atoms_to_dihedral[tuple(node)]]
+    if sin_cos_decomposition:
+        nodes_features = np.zeros(shape=(len(overlap_nodes), 2))
+        for i, node in enumerate(overlap_nodes):
+            # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+            nodes_features[i, 0] = np.sin(np.deg2rad(atoms_to_dihedral[tuple(node)]))
+            nodes_features[i, 1] = np.cos(np.deg2rad(atoms_to_dihedral[tuple(node)]))
+    else:
+        nodes_features = np.zeros(shape=(len(overlap_nodes), 1))
+        for i, node in enumerate(overlap_nodes):
+            # nodes_features[i] = [atoms_to_dihedral[tuple(node)], sum_properties(node, atoms, "mass")]
+            nodes_features[i, :] = [atoms_to_dihedral[tuple(node)]]
 
     edge_index = np.asarray(edges).transpose()
 
@@ -219,9 +226,6 @@ def get_debruijn_graph(atoms, angles, dihedrals, shuffle=False):
 
 
 def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False, sin_cos_decomposition=False):
-    if shuffle:
-        random.shuffle(dihedrals)
-
     # Using sorted to avoid (1,2) (2,1) duplicates
     atoms_to_dihedral = {
         tuple(sorted(dihedral["atoms"][1:3])): dihedral["value"] for dihedral in dihedrals
@@ -234,6 +238,9 @@ def get_central_overlap_graph(atoms, angles, dihedrals, shuffle=False, sin_cos_d
 
     # From set to list
     overlap_nodes = [i for i in overlap_nodes]
+    if shuffle:
+        random.shuffle(overlap_nodes)
+
     edges = []
     for i, dihedral1 in enumerate(overlap_nodes):
         for j, dihedral2 in enumerate(overlap_nodes):
