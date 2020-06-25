@@ -22,18 +22,13 @@ import optuna
 from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
-from GraphPoolingNets import TopKPoolingNet
+from GraphPoolingNets import TopKPoolingNet, GraphConvPoolNet
 from torch_geometric.nn.conv import GraphConv, GATConv
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if device == "cpu":
     warn("You are using CPU instead of CUDA. The computation will be longer...")
 
-
-seed = 123454
-# seed = 76583
-random.seed(seed)
-torch.manual_seed(seed)
 
 # Data parameters
 DATASET_TYPE = "old"
@@ -50,7 +45,6 @@ if not OVERWRITE_PICKLES:
 
 # Parameters
 run_parameters = {
-    "seed": seed,
     "sin_cos": True,
     "graph_type": "De Bruijn",
     "out_channels": 4,
@@ -62,10 +56,11 @@ run_parameters = {
     "normalize_target": NORMALIZE_TARGET,
     "dataset_perc": 1,
     "shuffle": False,
-    "train_split": 0.2,
+    "train_split": 0.1,
     "validation_split": 0.1,
     "unseen_region": UNSEEN_REGION
 }
+
 
 def read_dataset(train_perc):
     run_parameters["train_split"] = train_perc
@@ -150,142 +145,129 @@ def read_dataset(train_perc):
     return dataset, train_ind, validation_ind, test_ind, target_mean, target_std
 
 
-def define_model(trial, sample):
-    pooling_layers = trial.suggest_int("pooling_layers", 1, 1)
-    # pooling_layers = 1
-    pooling_type = trial.suggest_categorical("pooling_type", ["EdgePooling", "ASAPooling"])
-    convolution_type = trial.suggest_categorical("convolution_type", ["GraphConv", "GATConv"])
-    pooling_nodes_ratio = trial.suggest_discrete_uniform('pooling_nodes_ratio', 0.5, 0.8, 0.1)
-    final_pooling = trial.suggest_categorical("final_pooling", ["max_pool_x", "avg_pool_x", "sort_pooling", "topk"])
-    dense_output = trial.suggest_categorical("dense_output", [False, True])
-    channels_optuna = trial.suggest_int("channels_optuna", 1, 1)
-    # channels_optuna = 1
-    optuna_multiplier = trial.suggest_int("optuna_last_conv_multiplier", 1, 1)
-    # optuna_multiplier = 1
-    final_nodes = trial.suggest_int("final_nodes", 2, 3)
-    pprint({
-        "channels_optuna": channels_optuna,
-        "dense_output": dense_output,
-        "final_pooling": final_pooling,
-        "topk_ratio": pooling_nodes_ratio,
-        "pooling_layers": pooling_layers,
-        "pooling_type": pooling_type,
-        "final_nodes": final_nodes,
-        "optuna_multiplier": optuna_multiplier
-    })
-    return TopKPoolingNet(sample, pooling_layers, pooling_type, pooling_nodes_ratio, convolution_type, final_pooling, dense_output, channels_optuna, final_nodes, optuna_multiplier)
+def define_model(sample):
+    pooling_layers = [1]
+    pooling_type = "EdgePooling"
+    convolution_type = "GraphConv"
+    pooling_nodes_ratio = 0.5
+    final_pooling = ["max_pool_x"]
+    dense_output = False
+    channels_optuna = 1
+    optuna_multiplier = 1
+    final_nodes = 2
+    models, hyperparams = [], []
+    for pooling_layers_ in pooling_layers:
+        for final_pooling_ in final_pooling:
+            hyperparam = {
+                "channels_optuna": channels_optuna,
+                "dense_output": dense_output,
+                "final_pooling": final_pooling_,
+                "topk_ratio": pooling_nodes_ratio,
+                "pooling_layers": pooling_layers_,
+                "pooling_type": pooling_type,
+                "final_nodes": final_nodes,
+                "optuna_multiplier": optuna_multiplier
+            }
+            hyperparams.append(hyperparam)
+            models.append(
+                TopKPoolingNet(
+                    sample, pooling_layers_, pooling_type,
+                    pooling_nodes_ratio, convolution_type,
+                    final_pooling_, dense_output, channels_optuna,
+                    final_nodes, optuna_multiplier))
+    return zip(models, hyperparams)
 
 
-def objective(trial):
-    stopping = EarlyStopping(run_parameters["patience"])
+def objective():
+    seed = 1350
+    random.seed(seed)
+    torch.manual_seed(seed)
     train_perc = 0.1
-    # train_perc = trial.suggest_discrete_uniform("training_percentage", 0.05, 0.1, 0.05)
     dataset, train_ind, validation_ind, test_ind, target_mean, target_std = read_dataset(train_perc)
-    model = define_model(trial, dataset[0]).to(device)
-    print(model)
-    criterion = L1Loss()
-    optimizer_name = trial.suggest_categorical('optimizer', ['SGD', 'Adam'])
-    lr = trial.suggest_loguniform('learning_rate', 1e-4, 2e-3)
-    if optimizer_name == "SGD":
-        momentum = trial.suggest_loguniform("momentum", 0.6, 0.99)
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
-    else:
+    for model, hyperparameters in define_model(dataset[0]):
+        seed += 1
+        model = model.to(device)
+        stopping = EarlyStopping(run_parameters["patience"])
+        pprint(hyperparameters)
+        print(model)
+        criterion = L1Loss()
+        lr = 0.0003
         optimizer = optim.Adam(model.parameters(), lr=lr)
-    pprint({
-        "lr": lr,
-        "optimizer": optimizer,
-    })
-    for i in range(run_parameters["epochs"]):
-        model.train()
-        random.shuffle(train_ind)
-        train_losses = []
-        for number, j in enumerate(tqdm.tqdm(train_ind)):
-            # Forward pass: Compute predicted y by passing x to the model
-            y_pred = model(dataset[j].to(device))
-
-            # Compute and print loss
-            loss = criterion(y_pred, dataset[j].y)
-            # Zero gradients, perform a backward pass, and update the weights.
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            train_losses.append(loss.item())
-
-        train_loss = torch.mean(torch.as_tensor(train_losses)).item()
-        if NORMALIZE_TARGET:
-            train_loss = train_loss * target_std
-        # Compute validation loss
-        model.eval()
-        val_losses = []
-        # save some memory
-        with torch.no_grad():
-            for j in validation_ind:
+        for i in range(run_parameters["epochs"]):
+            model.train()
+            random.shuffle(train_ind)
+            train_losses = []
+            for number, j in enumerate(tqdm.tqdm(train_ind)):
+                # Forward pass: Compute predicted y by passing x to the model
                 y_pred = model(dataset[j].to(device))
-                val_loss = criterion(y_pred, dataset[j].y)
-                val_losses.append(val_loss.item())
 
-            val_loss = torch.mean(torch.as_tensor(val_losses)).item()
+                # Compute and print loss
+                loss = criterion(y_pred, dataset[j].y)
+                # Zero gradients, perform a backward pass, and update the weights.
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                train_losses.append(loss.item())
+
+            train_loss = torch.mean(torch.as_tensor(train_losses)).item()
             if NORMALIZE_TARGET:
-                val_loss = val_loss * target_std
-            print("Epoch {} - Validation MAE: {:.2f} - Train MAE: {:.2f}".format(i + 1, val_loss, train_loss))
+                train_loss = train_loss * target_std
+            # Compute validation loss
+            model.eval()
+            val_losses = []
+            # save some memory
+            with torch.no_grad():
+                for j in validation_ind:
+                    y_pred = model(dataset[j].to(device))
+                    val_loss = criterion(y_pred, dataset[j].y)
+                    val_losses.append(val_loss.item())
 
-            # Check Early Stopping
-            if stopping.check(val_loss):
-                run_parameters["epochs"] = i + 1
-                print(f"Training finished because of early stopping. Best loss on validation: {stopping.best_score:.2f}")
-                break
+                val_loss = torch.mean(torch.as_tensor(val_losses)).item()
+                if NORMALIZE_TARGET:
+                    val_loss = val_loss * target_std
+                print("Epoch {} - Validation MAE: {:.2f} - Train MAE: {:.2f}".format(i + 1, val_loss, train_loss))
 
-        trial.report(val_loss, i+1)
+                # Check Early Stopping
+                if stopping.check(val_loss):
+                    run_parameters["epochs_run"] = i + 1
+                    print(f"Training finished because of early stopping. Best loss on validation: {stopping.best_score:.2f}")
+                    break
 
-        # Handle pruning based on the intermediate value.
-        if trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        predictions, errors = [], []
+        model.eval()
+        for j in test_ind:
+            # Forward pass: Compute predicted y by passing x to the model
+            prediction = model(dataset[j].to(device))
+            error = prediction - dataset[j].y
+            predictions.append(prediction.item())
+            errors.append(error.item())
 
-    predictions = []
-    errors = []
-    model.eval()
-    for j in test_ind:
-        # Forward pass: Compute predicted y by passing x to the model
-        prediction = model(dataset[j].to(device))
-        error = prediction - dataset[j].y
-        predictions.append(prediction.item())
-        errors.append(error.item())
+        # Compute MAE
+        mae = np.absolute(np.asarray(errors)).mean()
+        if NORMALIZE_TARGET:
+            mae *= target_std
+        print("Mean Absolute Error on test: {:.2f}".format(mae))
 
-    # Compute MAE
-    mae = np.absolute(np.asarray(errors)).mean()
-    if NORMALIZE_TARGET:
-        mae *= target_std
-    print("Mean Absolute Error on test: {:.2f}".format(mae))
+        # Save predictions as json
+        directory = f"logs/{DATASET_TYPE}-{datetime.now().strftime('%m%d-%H%M')}-mae:{mae:.2f}-{hyperparameters['pooling_layers']}&{hyperparameters['final_pooling']}"
+        os.makedirs(directory)
+        with open(f"{directory}/result.json", "w") as f:
+            json.dump({
+                "hyperparameters": hyperparameters,
+                "run_parameters": run_parameters,
+                "predicted": predictions,
+                "target": [float(dataset[i].y.item()) for i in test_ind],
+                "target_std": float(target_std),
+                "target_mean": float(target_mean),
+                "test_frames": test_ind,
+                "train_frames": train_ind,
+            }, f)
 
-    return mae
+        torch.save({
+            "parameters": model.state_dict()
+        }, f"{directory}/parameters.pt")
 
 
-study_name = "Alanine Dipeptide - old dataset - intermediate pooling"
-study = optuna.create_study(
-    study_name=study_name,
-    storage='sqlite:///aladipepold.db',
-    load_if_exists=True,
-    pruner=optuna.pruners.MedianPruner(n_startup_trials=5,
-                                       n_warmup_steps=40,
-                                       interval_steps=5)
-)
-study.optimize(objective, n_trials=10)
-
-pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
-complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-
-print("Study statistics: ")
-print("  Number of finished trials: ", len(study.trials))
-print("  Number of pruned trials: ", len(pruned_trials))
-print("  Number of complete trials: ", len(complete_trials))
-
-print("Best trial:")
-best = study.best_trial
-
-print("  Value: ", best.value)
-
-print("  Params: ")
-for key, value in best.params.items():
-    print("    {}: {}".format(key, value))
+objective()
 
 
