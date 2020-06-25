@@ -37,7 +37,7 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = False
+OVERWRITE_PICKLES = True
 UNSEEN_REGION = None  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
@@ -150,11 +150,11 @@ def define_model(sample):
     pooling_type = "EdgePooling"
     convolution_type = "GraphConv"
     pooling_nodes_ratio = 0.5
-    final_pooling = ["max_pool_x", "avg_pool_x"]
+    final_pooling = ["max_pool_x", "avg_pool_x", "sort_pooling", "topk"]
     dense_output = False
     channels_optuna = 1
     optuna_multiplier = 1
-    final_nodes = 1
+    final_nodes = 3
     models, hyperparams = [], []
     for pooling_layers_ in pooling_layers:
         for final_pooling_ in final_pooling:

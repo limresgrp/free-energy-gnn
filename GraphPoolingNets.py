@@ -32,8 +32,8 @@ class Flatten(nn.Module):
 class TopKPoolingNet(nn.Module):
     def __init__(self, sample=None, pooling_layers=1, pooling_type="TopKPooling", topk_ratio=0.6, convolution_type="GraphConv", final_pooling="avg_pool_x", dense_output = False, channels_optuna=2, final_nodes=2, optuna_multiplier=1):
         super(TopKPoolingNet, self).__init__()
-        out_channels = 4
-        augmented_channels_multiplier = 4
+        out_channels = 5
+        augmented_channels_multiplier = 5
         convolution_type = GraphConv if convolution_type == "GraphConv" else GATConv if convolution_type == "GATConv" else GraphConv
         self.pooling_type = TopKPooling if pooling_type == "TopKPooling" else SAGPooling if pooling_type == "SAGPooling" else EdgePooling if pooling_type == "EdgePooling" else ASAPooling
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -50,7 +50,7 @@ class TopKPoolingNet(nn.Module):
         #     self.topkpool1 = self.pooling_type(2 * self.channels, ratio=topk_ratio+0.1)
         self.conv2 = convolution_type(2 * self.channels, 4 * self.channels)
         if pooling_type == "EdgePooling":
-            self.topkpool2 = self.pooling_type(4 * self.channels, dropout=0.3)
+            self.topkpool2 = self.pooling_type(4 * self.channels)
         else:
             self.topkpool2 = self.pooling_type(4 * self.channels, ratio=topk_ratio)
 
@@ -59,7 +59,7 @@ class TopKPoolingNet(nn.Module):
         #     self.topkpool3 = self.pooling_type(8 * self.channels * optuna_multiplier, dropout=0.3)
         # else:
         #     self.topkpool3 = self.pooling_type(8 * self.channels * optuna_multiplier, ratio=topk_ratio)
-        self.conv4 = convolution_type(8 * self.channels * optuna_multiplier, 8 * self.channels * optuna_multiplier)
+        # self.conv4 = convolution_type(8 * self.channels * optuna_multiplier, 8 * self.channels * optuna_multiplier)
         # self.conv5 = convolution_type(8 * self.channels * optuna_multiplier, 16 * self.channels * optuna_multiplier)
         self.final_pooling = final_pooling
         self.pooling_layers = pooling_layers
@@ -68,7 +68,7 @@ class TopKPoolingNet(nn.Module):
             ratio = 0.5 if pooling_type == "EdgePooling" else topk_ratio
             ratio = ratio**pooling_layers
             current = np.ceil(len(sample.x) * ratio)
-            ratio = self.final_nodes / current
+            ratio = self.final_nodes / current - 0.01
             self.last_pooling_layer = TopKPooling(8 * self.channels * optuna_multiplier,
                                                   ratio=ratio)
         elif self.final_pooling == "asap":
