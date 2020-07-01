@@ -102,8 +102,12 @@ def read_dataset(train_perc, compact_repr):
             if OVERWRITE_PICKLES:
                 raise FileNotFoundError
 
-            with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "rb") as p:
-                debruijn = pickle.load(p)
+            if compact_repr:
+                with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "rb") as p:
+                    debruijn = pickle.load(p)
+            else:
+                with open("{}/{}-dihedrals-graph-full.pickle".format(DATA_DIR, i), "rb") as p:
+                    debruijn = pickle.load(p)
 
         except FileNotFoundError:
             atoms, edges, angles, dihedrals = mol2graph.get_richgraph("{}/{}.json".format(DATA_DIR, i))
@@ -117,8 +121,12 @@ def read_dataset(train_perc, compact_repr):
                                                             sin_cos_decomposition=run_parameters["sin_cos"])
 
             if OVERWRITE_PICKLES:
-                with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
-                    pickle.dump(debruijn, p)
+                if compact_repr:
+                    with open("{}/{}-dihedrals-graph.pickle".format(DATA_DIR, i), "wb") as p:
+                        pickle.dump(debruijn, p)
+                else:
+                    with open("{}/{}-dihedrals-graph-full.pickle".format(DATA_DIR, i), "wb") as p:
+                        pickle.dump(debruijn, p)
 
         graph_samples.append(debruijn)
 
