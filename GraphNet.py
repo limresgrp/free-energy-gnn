@@ -141,7 +141,7 @@ class UnweightedSimplifiedDebruijnGraphNet(nn.Module):
         self.conv2 = GraphConv(2 * self.channels, 4 * self.channels)
         self.conv3 = GraphConv(4 * self.channels, 8 * self.channels)
         # self.conv4 = GraphConv(8*out_channels, 16*out_channels)
-        self.final_nodes = len(sample.x)
+        self.final_nodes = 7
         self.convlayers = convlayers
         self.hidden_channels = 2**(convlayers-1)
         # self.pool = SortPooling(self.final_nodes)
