@@ -23,6 +23,7 @@ from helpers import mol2graph
 from helpers.EarlyStopping import EarlyStopping
 from helpers.scale import normalize
 from GraphPoolingNets import TopKPoolingNet, GraphConvPoolNet
+from LinearNet import LinearNet
 from torch_geometric.nn.conv import GraphConv, GATConv
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -37,7 +38,7 @@ TARGET_FILE = f"free-energy-{DATASET_TYPE}.dat"
 N_SAMPLES = 3815 if DATASET_TYPE == "small" else 21881 if DATASET_TYPE == "medium" else 50000 if DATASET_TYPE == "old" else 64074 if DATASET_TYPE == "big" else 48952
 NORMALIZE_DATA = True
 NORMALIZE_TARGET = True
-OVERWRITE_PICKLES = True
+OVERWRITE_PICKLES = False
 UNSEEN_REGION = None  # can be "left", "right" or None. When is "left" we train on "right" and predict on "left"
 
 if not OVERWRITE_PICKLES:
@@ -178,13 +179,35 @@ def define_model(sample):
     return zip(models, hyperparams)
 
 
+def define_linear_model(sample):
+    nodes1 = 65
+    nodes2 = 340
+    nodes3 = 441
+    nodes4 = 220
+    models, hyperparams = [], []
+    for layer in [1, 4]:
+        hp = {
+            "nodes1": nodes1,
+            "nodes2": nodes2,
+            "nodes3": nodes3,
+            "nodes4": nodes4,
+            "layers": layer,
+        }
+        pprint(hp)
+        models.append(
+            LinearNet(sample, nodes1, nodes2, nodes3, nodes4, layer)
+        )
+        hyperparams.append(hp)
+    return zip(models, hyperparams)
+
+
 def objective():
     seed = 13000
     random.seed(seed)
     torch.manual_seed(seed)
     train_perc = 0.1
     dataset, train_ind, validation_ind, test_ind, target_mean, target_std = read_dataset(train_perc)
-    for model, hyperparameters in define_model(dataset[0]):
+    for model, hyperparameters in define_linear_model(dataset[0]):
         seed += 1
         model = model.to(device)
         stopping = EarlyStopping(run_parameters["patience"])
@@ -192,7 +215,7 @@ def objective():
         print(model)
         criterion = L1Loss()
         lr = 0.0003
-        optimizer = optim.Adam(model.parameters(), lr=lr)
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.84)
         for i in range(run_parameters["epochs"]):
             model.train()
             random.shuffle(train_ind)
@@ -249,7 +272,11 @@ def objective():
         print("Mean Absolute Error on test: {:.2f}".format(mae))
 
         # Save predictions as json
-        directory = f"logs/{DATASET_TYPE}-{datetime.now().strftime('%m%d-%H%M')}-mae:{mae:.2f}-{hyperparameters['pooling_layers']}&{hyperparameters['final_pooling']}"
+        if "pooling_layers" in hyperparameters:
+            directory = f"logs/{DATASET_TYPE}-{datetime.now().strftime('%m%d-%H%M')}-mae:{mae:.2f}-{hyperparameters['pooling_layers']}&{hyperparameters['final_pooling']}"
+        else:
+            directory = f"logs/{DATASET_TYPE}-{datetime.now().strftime('%m%d-%H%M')}-mae:{mae:.2f}-{hyperparameters['layers']}"
+
         os.makedirs(directory)
         with open(f"{directory}/result.json", "w") as f:
             json.dump({

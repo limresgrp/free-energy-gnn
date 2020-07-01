@@ -46,26 +46,31 @@ class SimplifiedLinearNet(nn.Module):
 
 
 class LinearNet(nn.Module):
-    def __init__(self, sample, nodes1=256, nodes2=1024, nodes3=128, nodes4=32):
+    def __init__(self, sample, nodes1=256, nodes2=1024, nodes3=128, nodes4=32, layers=4):
         super(LinearNet, self).__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.nodes = len(sample.x)
         self.nodes_features = sample.num_node_features
-        self.input = nn.Linear(self.nodes * self.nodes_features, nodes1)
+        self.input = nn.Linear(self.nodes * self.nodes_features, nodes1) if layers == 4 else nn.Linear(self.nodes * self.nodes_features, 128)
         self.middle = nn.Linear(nodes1, nodes2)
         self.middle2 = nn.Linear(nodes2, nodes3)
         self.middle3 = nn.Linear(nodes3, nodes4)
-        self.output = nn.Linear(nodes4, 1)
+        self.output = nn.Linear(nodes4, 1) if layers == 4 else nn.Linear(128, 1)
+
+        self.layers = layers
 
     def forward(self, sample):
         x = sample.x.view(-1)
+
         x = self.input(x)
         x = F.gelu(x)
-        x = self.middle(x)
-        x = F.gelu(x)
-        x = self.middle2(x)
-        x = F.gelu(x)
-        x = self.middle3(x)
-        x = F.gelu(x)
+        if self.layers == 4:
+            x = self.middle(x)
+            x = F.gelu(x)
+            x = self.middle2(x)
+            x = F.gelu(x)
+            x = self.middle3(x)
+            x = F.gelu(x)
+
         return self.output(x)
 
